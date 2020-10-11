@@ -1,0 +1,95 @@
+{
+	"name": "@evojs/http",
+	"version": "0.0.0",
+	"description": "Nodejs server MVC framework",
+	"main": "index.js",
+	"typings": "index.d.ts",
+	"scripts": {
+		"prebuild": "rm -rf dist/",
+		"build": "tsc --diagnostics --project tsconfig.build.json && node build.js",
+		"prepublishOnly": "npm run build && npm run test && node prepublish.js",
+		"release": "RELEASE_MODE=1 npm run prepublishOnly && npm publish --access public dist/",
+		"test": "jest --coverage --detectOpenHandles",
+		"fix": "eslint \"src/**/*.ts\" --fix --ext .ts",
+		"lint": "eslint \"src/**/*.ts\" -f codeframe"
+	},
+	"dependencies": {
+		"@evojs/validator": "0.0.4",
+		"content-type": "^1.0.4",
+		"formidable": "^1.2.2",
+		"http": "0.0.1-security",
+		"querystring": "^0.2.0",
+		"reflect-metadata": "^0.1.13",
+		"unpipe": "^1.0.0",
+		"util": "^0.12.3"
+	},
+	"devDependencies": {
+		"@types/content-type": "^1.1.3",
+		"@types/formidable": "^1.0.31",
+		"@typescript-eslint/eslint-plugin": "^4.4.0",
+		"@typescript-eslint/parser": "^4.4.0",
+		"eslint": "^7.11.0",
+		"eslint-plugin-import": "^2.22.1",
+		"form-data": "^3.0.0",
+		"fs": "0.0.1-security",
+		"jest": "^26.5.2",
+		"ts-jest": "^26.4.1",
+		"typescript": "^4.0.3"
+	},
+	"jest": {
+		"collectCoverage": true,
+		"collectCoverageFrom": [
+			"src/**/*.ts"
+		],
+		"moduleFileExtensions": [
+			"js",
+			"ts"
+		],
+		"rootDir": "./",
+		"testEnvironment": "node",
+		"testRegex": ".spec.ts$",
+		"transform": {
+			"^.+\\.(ts|js)$": "ts-jest"
+		},
+		"globals": {
+			"ts-jest": {
+				"tsconfig": "tsconfig.spec.json"
+			}
+		}
+	},
+	"nodemonConfig": {
+		"ignore": [
+			".git",
+			".vscode",
+			"node_modules",
+			"dist",
+			"src",
+			"coverage"
+		],
+		"watch": [
+			"test/**/*.ts"
+		],
+		"exec": "jest --coverage --detectOpenHandles",
+		"ext": "ts"
+	},
+	"license": "MIT",
+	"author": {
+		"name": "Shamil Sultanov",
+		"email": "evo@sultanov.io",
+		"url": "http://evo.sultanov.io"
+	},
+	"keywords": [
+		"nodejs",
+		"mvc",
+		"server",
+		"framework"
+	],
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/evotool/js-http.git"
+	},
+	"bugs": {
+		"url": "https://github.com/evotool/js-http/issues"
+	},
+	"homepage": "https://github.com/evotool/js-http#readme"
+}
