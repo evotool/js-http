@@ -6,7 +6,7 @@ export function Injectable(options: InjectableOptions = {}): ClassDecorator {
 		const buildOptions = {} as BuiltInjectable;
 
 		if (options.deps) {
-			buildOptions.deps = options.deps.map((dep) => (typeof dep === 'object' ? { ...dep, optional: dep.optional ?? false } : { provide: dep, optional: false }));
+			buildOptions.deps = options.deps.map((dep) => typeof dep === 'object' ? { ...dep, optional: dep.optional ?? false } : { provide: dep, optional: false });
 		} else if (Reflect.hasMetadata(DESIGN_PARAMTYPES_TOKEN, target)) {
 			const paramtypes = Reflect.getMetadata(DESIGN_PARAMTYPES_TOKEN, target) as ProviderConstructor[];
 

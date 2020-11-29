@@ -6,9 +6,9 @@ TypeScript MVC server framework.
 
 ## Main features
 
-1. Easy to understand configuration
-2. TypeScript typings
+1. Easy to understand configuration;
+2. TypeScript typings.
 
 ## License
 
-Licensed under MIT license
+Licensed under MIT license.

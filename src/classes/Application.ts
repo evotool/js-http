@@ -77,15 +77,15 @@ export class Application {
 				builtProviders.push({ provide: provider, useClass: provider, deps });
 				Reflect.deleteMetadata(INJECTABLE_OPTIONS_TOKEN, provider);
 			} else if ('useClass' in provider) {
-				const deps = provider.deps?.map((dep) => (typeof dep === 'object'
+				const deps = provider.deps?.map((dep) => typeof dep === 'object'
 					? { ...dep, optional: dep.optional ?? false }
-					: { provide: dep, optional: false })) || [];
+					: { provide: dep, optional: false }) || [];
 
 				builtProviders.push({ ...provider, deps });
 			} else if ('useFactory' in provider) {
-				const deps = provider.deps?.map((dep) => (typeof dep === 'object'
+				const deps = provider.deps?.map((dep) => typeof dep === 'object'
 					? { ...dep, optional: dep.optional ?? false }
-					: { provide: dep, optional: false })) || [];
+					: { provide: dep, optional: false }) || [];
 				builtProviders.push({ ...provider, deps });
 			} else {
 				builtProviders.push({ ...provider });
@@ -114,7 +114,7 @@ export class Application {
 				}
 
 				if (parents.includes(p.provide)) {
-					throw new Error(`Circular dependency: ${parents.map((p) => (typeof p === 'function' ? p.name : `'${p}'`)).join(' -> ')}`);
+					throw new Error(`Circular dependency: ${parents.map((p) => typeof p === 'function' ? p.name : `'${p}'`).join(' -> ')}`);
 				}
 
 				parents.push(p.provide);
@@ -208,7 +208,7 @@ export class Application {
 		}
 
 		// Reset parsers
-		parsers = (parsers ? { ...parsers } : { });
+		parsers = parsers ? { ...parsers } : { };
 
 		if (!parsers.json) {
 			parsers.json = JSON;
@@ -282,7 +282,7 @@ export class Application {
 		});
 	}
 
-	protected _resolveArgs(providers: BuiltProvider[], target: TokenType, deps: BuiltInject[]): any[] {
+	protected _resolveArgs(providers: BuiltProvider[], target: TokenType, deps: BuiltInject[]): unknown[] {
 		return deps.map((dep, i) => {
 			const provider = providers.find((p) => p.provide === dep.provide);
 
@@ -310,7 +310,7 @@ export class Application {
 		});
 	}
 
-	protected _buildControllerInstance(constructor: ProviderConstructor, dynamicProviders: BuiltValueProvider[] = []): { [key: string]: any } {
+	protected _buildControllerInstance(constructor: ControllerType, dynamicProviders: BuiltValueProvider[] = []): { [key: string]: any } {
 		const deps = this._builtInjects.get(constructor)!;
 		const args = this._resolveArgs((dynamicProviders as BuiltProvider[]).concat(this._providers), constructor, deps);
 
@@ -377,7 +377,7 @@ export class Application {
 
 				// Parse query
 				const parsers = this._parsers;
-				let query: NodeJS.Dict<any>;
+				let query: { [key: string]: any };
 
 				try {
 					query = parsers.urlencoded!.parse(querystring || '');
@@ -397,7 +397,7 @@ export class Application {
 						const isQuery = endpoint.bodyType === 'multipart' || (endpoint.bodyType === 'urlencoded' && parsers.urlencoded!.queryMode);
 
 						if (endpoint.bodyRule) {
-							body = validate(body, endpoint.bodyRule, 'body', isQuery) as any;
+							body = validate(body, endpoint.bodyRule, 'body', isQuery);
 						}
 					} catch (err) {
 						throw new HttpException(400, void 0, err);
@@ -430,8 +430,8 @@ export class Application {
 		interface Body {
 			statusCode: number;
 			message: string;
-			error: object | null;
-			payload: object | null;
+			error: any | null;
+			payload: any | null;
 		}
 
 		const body: Body = {
@@ -480,11 +480,37 @@ export class Application {
 export type ResponseHandler = (res: ServerResponse, err: Error | null, body: any) => void | PromiseLike<void>;
 
 export interface ApplicationOptions extends ServerOptions {
+
+	/**
+	 * Body options for any body types
+	 * @default {}
+	 */
 	bodyOptions?: BodyOptions;
+
+	/**
+	 * Array of controller types or controller paths
+	 * @default []
+	 */
 	controllers?: (ControllerType | string)[];
+
+	/**
+	 * @default {}
+	 */
 	hooks?: ApplicationHooks;
+
+	/**
+	 * @default []
+	 */
 	middlewares?: MiddlewareType[];
+
+	/**
+	 * @default Parsers
+	 */
 	parsers?: Partial<Parsers>;
+
+	/**
+	 * @default []
+	 */
 	providers?: (Provider | string)[];
 	responseHandler?: ResponseHandler;
 }
@@ -517,7 +543,7 @@ export type Provider =
 
 interface BuiltValueProvider {
 	provide: TokenType;
-	useValue: any;
+	useValue: unknown;
 }
 
 interface BuiltClassProvider {
@@ -528,7 +554,7 @@ interface BuiltClassProvider {
 
 interface BuiltFactoryProvider {
 	provide: TokenType;
-	useFactory(...args: any[]): any;
+	useFactory(...args: any[]): unknown;
 	deps: BuiltInject[];
 }
 
@@ -538,9 +564,9 @@ type BuiltProvider =
 | BuiltFactoryProvider;
 
 interface ApplicationHooks {
-	controllersLoad?(controllers: ControllerType[]): any | PromiseLike<any>;
-	providersLoad?(providers: BuiltProvider[]): any | PromiseLike<any>;
-	endpointsLoad?(endpoints: BuiltEndpoint[]): any | PromiseLike<any>;
+	controllersLoad?(controllers: ControllerType[]): void | PromiseLike<void>;
+	providersLoad?(providers: BuiltProvider[]): void | PromiseLike<void>;
+	endpointsLoad?(endpoints: BuiltEndpoint[]): void | PromiseLike<void>;
 }
 
 interface BuiltApplicationOptions {

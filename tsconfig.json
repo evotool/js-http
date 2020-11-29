@@ -7,7 +7,6 @@
 		"lib": ["esnext"],
 		"moduleResolution": "node",
 		"outDir": "dist/",
-		"removeComments": true,
 		"strict": true,
 		"target": "es5"
 	},

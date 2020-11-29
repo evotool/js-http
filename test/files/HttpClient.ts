@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-use-before-define */
 import { parse as parseContentType } from 'content-type';
 import * as FormData from 'form-data';
 import { IncomingHttpHeaders, IncomingMessage, OutgoingHttpHeaders, request as httpRequest } from 'http';
@@ -6,6 +7,58 @@ import { parse as parseUrl, resolve as resolveUrl } from 'url';
 
 import { Inject } from '../../src/decorators/Inject';
 import { Injectable } from '../../src/decorators/Injectable';
+
+export function stringifyQuery(query?: HttpQuery): string {
+	if (!query) {
+		return '';
+	}
+
+	return `?${Object
+		.entries(query)
+		.map(([key, value]) => {
+			key = encodeURIComponent(key);
+
+			if (Array.isArray(value)) {
+				return value.map((v) => {
+					if (typeof v === 'string') {
+						return `${key}=${encodeURIComponent(v)}`;
+					}
+
+					if (typeof v === 'number' && isFinite(v)) {
+						return `${key}=${encodeURIComponent(`${v}`)}`;
+					}
+
+					if (typeof v === 'boolean') {
+						return `${key}=${v ? '1' : '0'}`;
+					}
+
+					if (v instanceof Date) {
+						return `${key}=${v.toISOString()}`;
+					}
+				})
+					.filter(Boolean)
+					.join('&');
+			}
+
+			if (typeof value === 'string') {
+				return `${key}=${encodeURIComponent(value)}`;
+			}
+
+			if (typeof value === 'number' && isFinite(value)) {
+				return `${key}=${encodeURIComponent(`${value}`)}`;
+			}
+
+			if (typeof value === 'boolean') {
+				return `${key}=${value ? '1' : '0'}`;
+			}
+
+			if (value instanceof Date) {
+				return `${key}=${value.toISOString()}`;
+			}
+		})
+		.filter(Boolean)
+		.join('&')}`;
+}
 
 export class HttpHeaders {
 	private readonly _map: Map<string, number | string | string[]>;
@@ -77,7 +130,7 @@ export class HttpClient {
 			};
 
 			if (body instanceof FormData) {
-				body.submit(requestOptions, (err, res) => (err ? reject(err) : callback(res)));
+				body.submit(requestOptions, (err, res) => err ? reject(err) : callback(res));
 
 				return;
 			}
@@ -361,56 +414,4 @@ export interface HttpResponse<T> {
 
 export interface Logger {
 	debug(...args: any[]): void;
-}
-
-export function stringifyQuery(query?: HttpQuery): string {
-	if (!query) {
-		return '';
-	}
-
-	return `?${Object
-		.entries(query)
-		.map(([key, value]) => {
-			key = encodeURIComponent(key);
-
-			if (Array.isArray(value)) {
-				return value.map((v) => {
-					if (typeof v === 'string') {
-						return `${key}=${encodeURIComponent(v)}`;
-					}
-
-					if (typeof v === 'number' && isFinite(v)) {
-						return `${key}=${encodeURIComponent(`${v}`)}`;
-					}
-
-					if (typeof v === 'boolean') {
-						return `${key}=${v ? '1' : '0'}`;
-					}
-
-					if (v instanceof Date) {
-						return `${key}=${v.toISOString()}`;
-					}
-				})
-					.filter(Boolean)
-					.join('&');
-			}
-
-			if (typeof value === 'string') {
-				return `${key}=${encodeURIComponent(value)}`;
-			}
-
-			if (typeof value === 'number' && isFinite(value)) {
-				return `${key}=${encodeURIComponent(`${value}`)}`;
-			}
-
-			if (typeof value === 'boolean') {
-				return `${key}=${value ? '1' : '0'}`;
-			}
-
-			if (value instanceof Date) {
-				return `${key}=${value.toISOString()}`;
-			}
-		})
-		.filter(Boolean)
-		.join('&')}`;
 }

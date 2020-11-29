@@ -26,14 +26,14 @@ export type InjectOptions = Partial<BuiltInject>;
 export interface DepInjectOptions {
 	provide: TokenType;
 	optional?: boolean;
-	default?: any;
+	default?: unknown;
 }
 
 export interface BuiltInject {
 	provide: TokenType;
 	optional: boolean;
-	default?: any;
+	default?: unknown;
 }
 
-export type ProviderConstructor = new (...args: any[]) => any;
+export type ProviderConstructor = new (...args: any[]) => { [key: string]: any };
 export type TokenType = ProviderConstructor | string;

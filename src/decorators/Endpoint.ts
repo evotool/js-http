@@ -43,7 +43,7 @@ export interface EndpointOptions {
 	body?: ValidationSchema;
 	bodyRule?: ValidationRule;
 	bodyType?: BodyType;
-	bodyParser?(x: unknown, rule: ObjectRule): any;
+	bodyParser?(x: any, rule: ObjectRule): any;
 	authHandler?: AuthHandler | null;
 	middleware?: MiddlewareType | MiddlewareType[];
 	responseHandler?: ResponseHandler;
@@ -82,11 +82,11 @@ interface StaticBodyTypes {
 
 type PromiseType<T> = T extends PromiseLike<any> ? Parameters<NonNullable<Parameters<T['then']>[0]>>[0] : T;
 
-type AuthValue<AH extends EndpointOptions['authHandler']> = AH extends (...args: any) => any ? PromiseType<ReturnType<AH>> : any;
+type AuthValue<AH extends EndpointOptions['authHandler']> = AH extends (...args: any[]) => any ? PromiseType<ReturnType<AH>> : any;
 type QueryValue<Q extends EndpointOptions['query']> = Q extends ValidationSchema ? SchemaType<Q> : { [key: string]: string | string[] };
 type BodyValue<BT extends EndpointOptions['bodyType'], B extends EndpointOptions['body'], BP extends EndpointOptions['bodyParser'], BR extends EndpointOptions['bodyRule']> =
 BT extends keyof StaticBodyTypes ? StaticBodyTypes[BT] :
-	B extends ValidationSchema ? (BP extends (...args: any) => any ? ReturnType<BP> : SchemaType<B>) :
+	B extends ValidationSchema ? (BP extends (...args: any[]) => any ? ReturnType<BP> : SchemaType<B>) :
 		BR extends PrimitiveRule[] ? RuleType<BR[number]> :
 			BR extends PrimitiveRule ? RuleType<BR> : any;
 

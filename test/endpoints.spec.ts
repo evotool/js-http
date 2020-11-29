@@ -37,8 +37,8 @@ describe('endpoints', () => {
 				interface Body {
 					statusCode: number;
 					message: string;
-					error: object | null;
-					payload: object | null;
+					error: any | null;
+					payload: any | null;
 				}
 
 				const body: Body = {
@@ -271,8 +271,10 @@ describe('endpoints', () => {
 
 		for (let i = 0; i < REPEAT_COUNT; i++) {
 			promises.push((async (): Promise<void> => {
-				const q = Math.random().toString(16).substring(2);
-				const qq = q.split('').reverse().join('');
+				const q = Math.random().toString(16)
+					.substring(2);
+				const qq = q.split('').reverse()
+					.join('');
 				const res = await http.get(`http://localhost:3000/filled/query?q=${q}`, { headers: { cookie: `q=${q}; qq=${q}; qq=${qq}` } });
 				const body = await res.body();
 
@@ -314,7 +316,8 @@ describe('endpoints', () => {
 
 		for (let i = 0; i < REPEAT_COUNT; i++) {
 			promises.push((async (): Promise<void> => {
-				const q = Math.random().toString(16).substring(2);
+				const q = Math.random().toString(16)
+					.substring(2);
 				const res = await http.put<{ payload: { q: string } }>(`http://localhost:3000/filled/urlencoded`, {
 					headers: { 'content-type': 'application/x-www-form-urlencoded; charset=utf-8' },
 					body: `q=${q}`,
@@ -337,7 +340,8 @@ describe('endpoints', () => {
 
 		for (let i = 0; i < REPEAT_COUNT; i++) {
 			promises.push((async (): Promise<void> => {
-				const q = Math.random().toString(16).substring(2);
+				const q = Math.random().toString(16)
+					.substring(2);
 				const res = await http.put<{ payload: { q: string } }>(`http://localhost:3000/filled/json`, { body: { q } });
 				const body = await res.body();
 
@@ -468,6 +472,7 @@ describe('endpoints', () => {
 		@Controller()
 		class TestController {
 			constructor(readonly test: TestService, @Inject('FACTORY') readonly factory: 1, @Inject('VALUE') readonly value: 2) {}
+
 			@Endpoint()
 			index(): {} {
 				return {};
@@ -476,7 +481,8 @@ describe('endpoints', () => {
 
 		@Controller()
 		class SecondTestController {
-			constructor(readonly test: unknown) {}
+			constructor(readonly test: any) {}
+
 			@Endpoint()
 			index(): {} {
 				return {};
@@ -504,7 +510,7 @@ describe('endpoints', () => {
 		res = await http.get('http://localhost:3002/second_test');
 		expect(res.statusCode).toBe(500);
 
-		res = await http.get('http://localhost:3002/unknown');
+		res = await http.get('http://localhost:3002/any');
 		expect(res.statusCode).toBe(404);
 		await stopApplication(app);
 
