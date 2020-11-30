@@ -282,7 +282,7 @@ export class Application {
 		});
 	}
 
-	protected _resolveArgs(providers: BuiltProvider[], target: TokenType, deps: BuiltInject[]): unknown[] {
+	protected _resolveArgs(providers: BuiltProvider[], target: TokenType, deps: BuiltInject[]): any[] {
 		return deps.map((dep, i) => {
 			const provider = providers.find((p) => p.provide === dep.provide);
 
@@ -544,7 +544,7 @@ export type Provider =
 
 interface BuiltValueProvider {
 	provide: TokenType;
-	useValue: unknown;
+	useValue: any;
 }
 
 interface BuiltClassProvider {
@@ -555,7 +555,7 @@ interface BuiltClassProvider {
 
 interface BuiltFactoryProvider {
 	provide: TokenType;
-	useFactory(...args: any[]): unknown;
+	useFactory(...args: any[]): any;
 	deps: BuiltInject[];
 }
 
