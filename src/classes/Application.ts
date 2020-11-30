@@ -466,6 +466,7 @@ export class Application {
 			}
 
 			body.payload = payload;
+			body.message = res.statusMessage;
 		}
 
 		const data = Buffer.from(JSON.stringify(body), 'utf-8');
