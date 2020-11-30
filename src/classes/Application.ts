@@ -435,8 +435,8 @@ export class Application {
 		}
 
 		const body: Body = {
-			statusCode: 200,
-			message: '',
+			statusCode: 500,
+			message: 'Internal Server Error',
 			error: null,
 			payload: null,
 		};
@@ -454,9 +454,6 @@ export class Application {
 					body.error = err.details ?? {};
 				}
 			} else {
-				body.statusCode = 500;
-				body.message = 'Internal Server Error';
-
 				const { message, stack } = err;
 				body.error = { message, stack };
 			}
@@ -466,7 +463,9 @@ export class Application {
 			}
 
 			body.payload = payload;
-			body.message = res.statusMessage;
+
+			body.statusCode = res.statusCode || 200;
+			body.message = res.statusMessage || '';
 		}
 
 		const data = Buffer.from(JSON.stringify(body), 'utf-8');
