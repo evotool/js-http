@@ -444,7 +444,6 @@ export class Application {
 		if (err) {
 			if (err instanceof HttpException) {
 				body.statusCode = err.statusCode;
-
 				body.message = err.message || '';
 
 				if (err.details instanceof Error) {
@@ -470,7 +469,7 @@ export class Application {
 
 		const data = Buffer.from(JSON.stringify(body), 'utf-8');
 
-		return res.writeHead(body.statusCode!, {
+		return res.writeHead(body.statusCode!, '', {
 			'Content-Type': 'application/json; charset=utf-8',
 			'Content-Length': `${data.byteLength}`,
 		}).end(data);
