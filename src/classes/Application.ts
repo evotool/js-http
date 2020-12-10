@@ -4,7 +4,7 @@ import * as qs from 'querystring';
 
 import { BuiltInject, DepInjectOptions, ProviderConstructor, TokenType } from '..';
 import type { ControllerType, MiddlewareType } from '../decorators/Controller';
-import type { BuiltEndpoint, HttpMethod } from '../decorators/Endpoint';
+import type { BuiltEndpoint, HttpMethod, Params } from '../decorators/Endpoint';
 import { BodyOptions, Parsers, parseBody } from '../utils/parse-body';
 import { parseCookie } from '../utils/parse-cookie';
 import { CONTROLLER_ENDPOINTS_TOKEN, INJECTABLE_OPTIONS_TOKEN, REQUEST_TOKEN, RESPONSE_TOKEN } from '../utils/tokens';
@@ -105,7 +105,7 @@ export class Application {
 		}
 
 		// check for circular dependency
-		function inDeep(deps: BuiltInject[], parents: TokenType[] = []): void {
+		function checkCircularDependency(deps: BuiltInject[], parents: TokenType[] = []): void {
 			for (const d of deps) {
 				const p = builtProviders.find((x) => x.provide === d.provide)!;
 
@@ -119,7 +119,7 @@ export class Application {
 
 				parents.push(p.provide);
 
-				inDeep(p.deps, parents);
+				checkCircularDependency(p.deps, parents);
 			}
 		}
 
@@ -128,7 +128,7 @@ export class Application {
 				continue;
 			}
 
-			inDeep(p.deps);
+			checkCircularDependency(p.deps);
 		}
 
 		return builtProviders;
@@ -146,9 +146,9 @@ export class Application {
 			.flat();
 
 		// Check endpoints for same location
-		const locationTemplates = endpoints.map((ep) => `${ep.method} ${ep.locationTemplate}`);
+		const methodPaths = endpoints.map((ep) => `${ep.method} ${ep.path}`);
 
-		for (let i = 0, a = locationTemplates, t = a[i], l = a.length; i < l; t = a[++i]) {
+		for (let i = 0, a = methodPaths, t = a[i], l = a.length; i < l; t = a[++i]) {
 			if (a.indexOf(t) !== i) {
 				throw new Error(`Some endpoints have the same location: "${t}"`);
 			}
@@ -208,7 +208,7 @@ export class Application {
 		}
 
 		// Reset parsers
-		parsers = parsers ? { ...parsers } : { };
+		parsers = parsers ? { ...parsers } : {};
 
 		if (!parsers.json) {
 			parsers.json = JSON;
@@ -345,12 +345,12 @@ export class Application {
 				const [location, querystring] = (req.url || '').split('?', 2) as [string, string?];
 
 				// Find endpoint and resolve params
-				let params!: string[];
+				let params: Params = {};
 				const endpoint = this._endpoints.find((ep) => {
-					params = Array.from(ep.location.exec(location) || []) as string[];
+					const match = ep.pathRegex.exec(location) as string[];
 
-					if (params.length && (req.method === ep.method || (req.method === 'HEAD' && ep.method === 'GET'))) {
-						params = params.slice(1).map((p) => decodeURIComponent(p));
+					if (match && (req.method === ep.method || (req.method === 'HEAD' && ep.method === 'GET'))) {
+						params = Object.fromEntries(Array.from(match).slice(1).map((p, i) => [ep.paramOrder[i], decodeURIComponent(p)]));
 
 						return true;
 					}
@@ -471,7 +471,7 @@ export class Application {
 
 		return res.writeHead(body.statusCode!, '', {
 			'Content-Type': 'application/json; charset=utf-8',
-			'Content-Length': `${data.byteLength}`,
+			'Content-Length': data.byteLength.toString(),
 		}).end(data);
 	};
 }

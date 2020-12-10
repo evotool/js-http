@@ -5,6 +5,7 @@ import { ImportedService } from './service';
 
 @Controller({
 	path: 'imported',
+	param: {},
 	useMethodNames: true,
 })
 export class ImportedController {
@@ -22,10 +23,10 @@ export class ImportedController {
 
 	@Endpoint({
 		method: 'GET',
-		path: ['hello', /^\w+$/],
+		path: 'hello/:name(\\w+)',
 		authHandler: () => {},
 	})
-	sayHelloUrl({ params: [name] }: RequestData<void, {}, undefined>): { payload: string } {
+	sayHelloUrl({ params: { name } }: RequestData<void, {}, undefined>): { payload: string } {
 		return { payload: this.hello.sayHello(name) };
 	}
 }

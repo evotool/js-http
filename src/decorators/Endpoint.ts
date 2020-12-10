@@ -37,7 +37,8 @@ export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH' | 'OPTIONS'
 export type EndpointHandler = (request: RequestData) => any | PromiseLike<any>;
 
 export interface EndpointOptions {
-	path?: string | (string | RegExp)[];
+	path?: string;
+	param?: ParamSchema;
 	method?: HttpMethod;
 	query?: ValidationSchema;
 	body?: ValidationSchema;
@@ -54,8 +55,10 @@ export interface BuiltEndpoint extends EndpointOptions {
 	method: HttpMethod;
 	controller: ControllerType;
 	handler: EndpointHandler;
-	location: RegExp;
-	locationTemplate: string;
+	path: string;
+	pathRegex: RegExp;
+	paramOrder: string[];
+	param: ParamSchema;
 	descriptor: PropertyDescriptor;
 	bodyType: BodyType;
 	queryRule?: ObjectRule;
@@ -66,9 +69,17 @@ export interface RequestData<Auth = any, Query = any, Body = any> {
 	auth: Auth;
 	query: Query;
 	body: Body;
-	params: string[];
+	params: Params;
 	cookies: Cookies;
 	headers: IncomingHttpHeaders;
+}
+
+export interface Params {
+	[key: string]: string;
+}
+
+export interface ParamSchema {
+	[key: string]: RegExp;
 }
 
 export type AuthHandler = (req: IncomingMessage, res: ServerResponse) => any | PromiseLike<any>;

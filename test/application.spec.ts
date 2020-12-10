@@ -1,5 +1,6 @@
+import { HttpClient } from '@evojs/http-client';
+
 import { Controller, Endpoint } from '../src';
-import { HttpClient } from './files/HttpClient';
 import { createApplication, startApplication, stopApplication } from './files/test-utils';
 
 const http = new HttpClient({ debug() {} });
@@ -82,6 +83,53 @@ describe('application', () => {
 		await startApplication(app, 3001);
 		await http.get('http://localhost:3001/index').then((res) => res.body());
 		await stopApplication(app);
+		done();
+	});
+
+	it('shoud return 400 exception due to bad query', async (done) => {
+		@Controller()
+		class IndexController {
+			@Endpoint({
+				query: {
+					page: { type: 'number' },
+				},
+			})
+			test(): void {
+			}
+		}
+
+		const app = await createApplication({ controllers: [IndexController] });
+		await startApplication(app, 3001);
+
+		const body = await http.get<{ statusCode: number }>('http://localhost:3001/index', { query: { page: 'NaN' } }).then((res) => res.body());
+		expect(body.statusCode).toBe(400);
+
+		await stopApplication(app);
+
+		done();
+	});
+
+	it('shoud return 400 exception due to bad body', async (done) => {
+		@Controller()
+		class IndexController {
+			@Endpoint({
+				method: 'POST',
+				body: {
+					page: { type: 'number' },
+				},
+			})
+			test(): void {
+			}
+		}
+
+		const app = await createApplication({ controllers: [IndexController] });
+		await startApplication(app, 3001);
+
+		const body = await http.post<{ statusCode: number }>('http://localhost:3001/index', { body: { page: 'NaN' } }).then((res) => res.body());
+		expect(body.statusCode).toBe(400);
+
+		await stopApplication(app);
+
 		done();
 	});
 });

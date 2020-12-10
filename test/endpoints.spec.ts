@@ -1,9 +1,9 @@
+import { HttpClient } from '@evojs/http-client';
 import * as FormData from 'form-data';
 import { createReadStream } from 'fs';
 import { isDeepStrictEqual } from 'util';
 
 import { Application, Controller, ControllerType, Endpoint, File, HttpException, Inject, Injectable, MiddlewareType, Provider, RequestData } from '../src';
-import { HttpClient } from './files/HttpClient';
 import { createApplication, startApplication, stopApplication } from './files/test-utils';
 
 jest.setTimeout(30000);
@@ -106,7 +106,8 @@ describe('endpoints', () => {
 			}
 
 			@Endpoint({
-				path: ['params', /^\w+$/],
+				path: 'params/:test(\\w+)',
+				param: {},
 				method: 'GET',
 				middleware: [],
 			})
@@ -529,6 +530,25 @@ describe('endpoints', () => {
 			});
 		} catch (err) {
 			expect(err.message).toBeDefined();
+			done();
+		}
+	});
+
+	it('should throw bad path error', async (done) => {
+		try {
+			@Controller()
+			class IndexController {
+				@Endpoint({
+					path: 'test/:0',
+				})
+				test(): void {}
+			}
+
+			await createApplication({
+				controllers: [IndexController],
+			});
+		} catch (err) {
+			expect(err.message.startsWith('Bad path')).toBe(true);
 			done();
 		}
 	});
