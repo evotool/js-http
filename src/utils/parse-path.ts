@@ -1,8 +1,7 @@
 import { ParamSchema } from '../decorators/Endpoint';
 
-const REGEX_REPLACE = /(?:^(\^))|(?:(\$)\|)|(?:\|(\^))|(?:(\$)$)/g;
-const PATH_REGEX = /^:([a-zA-Z_$][a-zA-Z0-9_$]*)(\(.*\))?$/;
-const parsePathItem = (p: RegExp): string => `(${p.source.replace(REGEX_REPLACE, '')})`;
+const PATH_REGEX = /^:([a-z_$][a-z0-9_$]*)(\(.*\))?$/i;
+const parsePathItem = (p: RegExp): string => `(${p.source.replace(/^\^|\$$/g, '').replace(/\$\|/g, '|').replace(/\|\^/g, '|')})`;
 
 export function parsePath(path: string, params: ParamSchema): { path: string; pathRegex: RegExp; paramOrder: string[] } {
 	const pathParts = path.split('/').filter(Boolean);
