@@ -27,7 +27,7 @@ export function parsePath(path: string, params: ParamSchema): { path: string; pa
 			parsedPathRegex += `/${spattern}`;
 
 			if (regex || params[param]) {
-				parsedPath += spattern;
+				parsedPath += `/${spattern}`;
 			}
 
 			params[param] ??= pattern;
