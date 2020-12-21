@@ -14,22 +14,19 @@ export class Application {
 	protected static async _loadControllers(controllers: (ControllerType | string)[]): Promise<ControllerType[]> {
 		controllers = Array.from(controllers);
 
-		for (let i = 0, len = controllers.length, controllerOrPath: ControllerType | string; i < len; i++) {
-			controllerOrPath = controllers[i];
-
-			if (typeof controllerOrPath === 'string') {
-				const imports = await import(controllerOrPath);
+		for (let i = 0, a = controllers, l = a.length, x = a[i]; i < l; x = a[++i]) {
+			if (typeof x === 'string') {
+				const imports = await import(x);
 				const controllersFromImport = Object.values(imports)
 					.filter((c) => typeof c === 'function' && Reflect.hasMetadata(CONTROLLER_ENDPOINTS_TOKEN, c)) as ControllerType[];
-				controllers.splice(i, 1, ...controllersFromImport);
+				a.splice(i, 1, ...controllersFromImport);
+				l = a.length;
 			}
 		}
 
 		// Check duplicates
-		for (let i = 0, len = controllers.length, c: ControllerType; i < len; i++) {
-			c = controllers[i] as ControllerType;
-
-			if (controllers.indexOf(c) !== i) {
+		for (let i = 0, a = controllers, l = a.length, x = a[i]; i < l; x = a[++i]) {
+			if (a.indexOf(x) !== i) {
 				throw new Error('Controller was provided more than one times');
 			}
 		}
@@ -41,21 +38,19 @@ export class Application {
 		providers = Array.from(providers);
 
 		// Load provider from imports
-		for (let i = 0, len = providers.length, providerOrPath: Provider | string; i < len; i++) {
-			providerOrPath = providers[i];
-
-			if (typeof providerOrPath === 'string') {
-				const imports = await import(providerOrPath);
-				const providersFromImport = Object.values(imports).filter((c) => typeof c === 'function' && Reflect.hasMetadata(INJECTABLE_OPTIONS_TOKEN, c)) as Provider[];
-				providers.splice(i, 1, ...providersFromImport);
+		for (let i = 0, a = providers, l = a.length, x = a[i]; i < l; x = a[++i]) {
+			if (typeof x === 'string') {
+				const imports = await import(x);
+				const providersFromImport = Object.values(imports)
+					.filter((c) => typeof c === 'function' && Reflect.hasMetadata(INJECTABLE_OPTIONS_TOKEN, c)) as Provider[];
+				a.splice(i, 1, ...providersFromImport);
+				l = a.length;
 			}
 		}
 
 		// Check duplicates
-		for (let i = 0, len = providers.length, p: Provider; i < len; i++) {
-			p = providers[i] as Provider;
-
-			if (providers.indexOf(p) !== i) {
+		for (let i = 0, a = providers, l = a.length, x = a[i]; i < l; x = a[++i]) {
+			if (a.indexOf(x) !== i) {
 				throw new Error('Provider was provided more than one times');
 			}
 		}
@@ -148,9 +143,9 @@ export class Application {
 		// Check endpoints for same location
 		const methodPaths = endpoints.map((ep) => `${ep.method} ${ep.path}`);
 
-		for (let i = 0, a = methodPaths, t = a[i], l = a.length; i < l; t = a[++i]) {
-			if (a.indexOf(t) !== i) {
-				throw new Error(`Some endpoints have the same location: "${t}"`);
+		for (let i = 0, a = methodPaths, x = a[i], l = a.length; i < l; x = a[++i]) {
+			if (a.indexOf(x) !== i) {
+				throw new Error(`Some endpoints have the same location: "${x}"`);
 			}
 		}
 
