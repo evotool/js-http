@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-use-before-define */
 import * as contentType from 'content-type';
 import { IncomingForm } from 'formidable';
 import { mkdirSync } from 'fs';
@@ -32,7 +33,7 @@ export function parseMultipart(req: IncomingMessage, options: MultipartOptions =
 			};
 		}
 
-		form.parse(req, (err: Error | null, fields: Record<string, string | string[]>, files: Record<string, File>) => {
+		form.parse(req, (err: Error | null, fields: Record<string, string | string[]>, files: Record<string, File | File[]>) => {
 			if (err) {
 				reject(err);
 
@@ -97,7 +98,9 @@ function readBody(req: IncomingMessage, encoding?: string | undefined, limit?: n
 		const data: Buffer[] = [];
 
 		function cleanup(throwed?: boolean): void {
-			if (complete) return;
+			if (complete) {
+				return;
+			}
 
 			complete = true;
 
@@ -113,7 +116,9 @@ function readBody(req: IncomingMessage, encoding?: string | undefined, limit?: n
 		}
 
 		function onAborted(): void {
-			if (complete) return;
+			if (complete) {
+				return;
+			}
 
 			cleanup(true);
 
@@ -121,7 +126,9 @@ function readBody(req: IncomingMessage, encoding?: string | undefined, limit?: n
 		}
 
 		function onData(chunk: Buffer): void {
-			if (complete) return;
+			if (complete) {
+				return;
+			}
 
 			received += chunk.length;
 
@@ -135,7 +142,9 @@ function readBody(req: IncomingMessage, encoding?: string | undefined, limit?: n
 		}
 
 		function onEnd(err: Error): void {
-			if (complete) return;
+			if (complete) {
+				return;
+			}
 
 			if (err || received !== length!) {
 				cleanup(true);
@@ -296,5 +305,5 @@ export interface UrlencodedData {
 }
 
 export interface MultipartData {
-	[key: string]: string | string[] | File;
+	[key: string]: string | string[] | File | File[];
 }
