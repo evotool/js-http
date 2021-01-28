@@ -193,7 +193,7 @@ export async function parseBody(req: IncomingMessage, bodyType: BodyType, parser
 	const { type, parameters } = contentType.parse(req);
 
 	const limit = options[bodyType]?.limit;
-	const encoding = parameters.charset || 'utf-8';
+	const encoding = (parameters.charset || 'utf-8').toLowerCase();
 
 	try {
 		switch (bodyType) {
