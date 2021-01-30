@@ -148,6 +148,8 @@ export function parseMultipart(req: IncomingMessage, boundary: string, encoding:
 						return;
 					}
 
+					prevStartIndex = 0;
+
 					startIndex = endIndex + BOUNDARY.length;
 
 					if (chunk[startIndex] === THEEND[0] && chunk[startIndex + 1] === THEEND[1]) {
@@ -169,6 +171,8 @@ export function parseMultipart(req: IncomingMessage, boundary: string, encoding:
 
 						return;
 					}
+
+					prevStartIndex = 0;
 
 					const contentDispositionLine = chunk.slice(startIndex, endIndex).toString(encoding);
 					const m = CONTENT_DISPOSITION_REGEX.exec(contentDispositionLine);
@@ -199,6 +203,8 @@ export function parseMultipart(req: IncomingMessage, boundary: string, encoding:
 
 						return;
 					}
+
+					prevStartIndex = 0;
 
 					if (startIndex === endIndex) {
 						mimetype = '';
@@ -436,8 +442,6 @@ const BodyTypes: { [key: string]: BodyType } = {
 	'multipart/form-data': 'multipart',
 };
 
-const IncorrectContentTypeError = new Error('Incorrect header "Content-Type"');
-
 export async function parseBody(req: IncomingMessage, bodyType: 'none', parsers: Parsers, options: BodyOptions): Promise<undefined>;
 export async function parseBody(req: IncomingMessage, bodyType: 'json', parsers: Parsers, options: BodyOptions): Promise<JsonData>;
 export async function parseBody(req: IncomingMessage, bodyType: 'urlencoded', parsers: Parsers, options: BodyOptions): Promise<UrlencodedData>;
@@ -453,7 +457,7 @@ export async function parseBody(req: IncomingMessage, bodyType: BodyType, parser
 
 	try {
 		if (!req.headers['content-type']) {
-			throw IncorrectContentTypeError;
+			throw new Error('Incorrect header "Content-Type"');
 		}
 
 		const { type, parameters } = contentType.parse(req);
@@ -464,7 +468,7 @@ export async function parseBody(req: IncomingMessage, bodyType: BodyType, parser
 			case 'json':
 			{
 				if (BodyTypes[type] !== bodyType) {
-					throw IncorrectContentTypeError;
+					throw new Error('Incorrect header "Content-Type"');
 				}
 
 				const raw = await readBody(req, encoding, contentLengthLimit);
@@ -475,7 +479,7 @@ export async function parseBody(req: IncomingMessage, bodyType: BodyType, parser
 			case 'urlencoded':
 			{
 				if (BodyTypes[type] !== bodyType) {
-					throw IncorrectContentTypeError;
+					throw new Error('Incorrect header "Content-Type"');
 				}
 
 				const raw = await readBody(req, encoding, contentLengthLimit);
@@ -486,7 +490,7 @@ export async function parseBody(req: IncomingMessage, bodyType: BodyType, parser
 			case 'multipart':
 			{
 				if (BodyTypes[type] !== bodyType) {
-					throw IncorrectContentTypeError;
+					throw new Error('Incorrect header "Content-Type"');
 				}
 
 				const data = await parseMultipart(req, parameters.boundary, encoding, options as MultipartOptions);
@@ -499,7 +503,7 @@ export async function parseBody(req: IncomingMessage, bodyType: BodyType, parser
 
 			case 'text': {
 				if (!type.startsWith('text/')) {
-					throw IncorrectContentTypeError;
+					throw new Error('Incorrect header "Content-Type"');
 				}
 
 				const raw = await readBody(req, encoding, contentLengthLimit);
@@ -516,7 +520,7 @@ export async function parseBody(req: IncomingMessage, bodyType: BodyType, parser
 		}
 	} catch (err) {
 		if (!(err instanceof HttpException)) {
-			throw new HttpException(500, 'Internal Server Error', err);
+			throw new HttpException(500, 'Internal Server Error', { message: err.message, stack: err.stack });
 		}
 
 		throw err;

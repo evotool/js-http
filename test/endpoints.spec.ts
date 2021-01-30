@@ -1,6 +1,5 @@
 import { HttpClient } from '@evojs/http-client';
-import * as FormData from 'form-data';
-import { createReadStream } from 'fs';
+import { readFileSync } from 'fs';
 import { isDeepStrictEqual } from 'util';
 
 import { Application, Controller, ControllerType, Endpoint, File, HttpException, Inject, Injectable, MiddlewareType, Provider, RequestData } from '../src';
@@ -120,8 +119,10 @@ describe('endpoints', () => {
 				middleware: [],
 				bodyType: 'multipart',
 				body: {
-					text: { type: 'string' },
 					file: { type: 'object', unknown: true },
+					type: { type: 'string', values: ['image'] },
+					name: { type: 'string' },
+					alt: { type: 'string' },
 				},
 				bodyOptions: {
 					uploadsDirectory: 'tmp',
@@ -285,19 +286,43 @@ describe('endpoints', () => {
 
 		for (let i = 0; i < REPEAT_COUNT; i++) {
 			promises.push((async (): Promise<void> => {
-				const data = new FormData();
-				data.append('text', 'text');
-				data.append('file', createReadStream('test/files/test.txt'));
-
-				const res = await http.post<{ payload: { text: string; file: { filename: string; mimetype: string; charset: string; path: string } } }>(`http://localhost:3000/filled/multipart`, { body: data });
+				const res = await http.post<{ payload: { type: 'image'; name: string; alt: string; file: { filename: string; mimetype: string; charset: string; path: string } } }>(`http://localhost:3000/filled/multipart`, {
+					headers: {
+						'Content-Type': 'multipart/form-data; boundary=----WebKitFormBoundaryJNqLtJvuSsf0N35T',
+					},
+					body: Buffer.concat([
+						Buffer.from('------WebKitFormBoundaryJNqLtJvuSsf0N35T\r\n'
++ 'Content-Disposition: form-data; name="file"; filename="test"\r\n'
++ 'Content-Type: image/png\r\n'
++ '\r\n'),
+						readFileSync('test/files/test.png'),
+						Buffer.from('\r\n'
++ '------WebKitFormBoundaryJNqLtJvuSsf0N35T\r\n'
++ 'Content-Disposition: form-data; name="type"\r\n'
++ '\r\n'
++ 'image\r\n'
++ '------WebKitFormBoundaryJNqLtJvuSsf0N35T\r\n'
++ 'Content-Disposition: form-data; name="name"\r\n'
++ '\r\n'
++ '\r\n'
++ '------WebKitFormBoundaryJNqLtJvuSsf0N35T\r\n'
++ 'Content-Disposition: form-data; name="alt"\r\n'
++ '\r\n'
++ 'alt_\r\n'
++ '------WebKitFormBoundaryJNqLtJvuSsf0N35T--'),
+					]),
+				});
 				const body = await res.body();
+				console.log(body);
 
 				expect(body).toBeTruthy();
-				expect(body.payload.text).toBe('text');
-				expect(body.payload.file.mimetype).toBe('text/plain');
+				expect(body.payload.type).toBe('image');
+				expect(body.payload.name).toBe('');
+				expect(body.payload.alt).toBe('alt_');
+				expect(body.payload.file.mimetype).toBe('image/png');
 				expect(body.payload.file.charset).toBe('utf-8');
-				expect(body.payload.file.filename).toBe('test.txt');
-				expect(body.payload.file.path.endsWith('test.txt')).toBe(true);
+				expect(body.payload.file.filename).toBe('test');
+				expect(body.payload.file.path.endsWith('test')).toBe(true);
 				expect(res.statusCode).toBe(200);
 			})());
 		}
