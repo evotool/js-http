@@ -3,7 +3,7 @@ import { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'http';
 
 import { ResponseHandler } from '../classes/Application';
 import { getEndpoints } from '../utils/get-endpoints';
-import { BodyType } from '../utils/parse-body';
+import { BodyOptions, BodyType } from '../utils/parse-body';
 import { Cookies } from '../utils/parse-cookie';
 import { ControllerType, MiddlewareType } from './Controller';
 
@@ -17,15 +17,22 @@ export function Endpoint<O extends EndpointOptions>(options: O = {} as O): Endpo
 		// set descriptor
 		buildOptions.descriptor = descriptor;
 
-		// set bodyRule if body exists
-		if (buildOptions.body) {
-			buildOptions.bodyRule = { type: 'object', schema: buildOptions.body, parse: buildOptions.bodyParser };
+		// set queryRule if query exists
+		if (buildOptions.query && !buildOptions.queryRule) {
+			buildOptions.queryRule = { type: 'object', schema: buildOptions.query, parse: buildOptions.queryParser };
+			delete buildOptions.query;
+			delete buildOptions.queryParser;
 		}
 
-		// set queryRule if query exists
-		if (buildOptions.query) {
-			buildOptions.queryRule = { type: 'object', schema: buildOptions.query };
+		// set bodyRule if body exists
+		if (buildOptions.body && !buildOptions.bodyRule) {
+			buildOptions.bodyRule = { type: 'object', schema: buildOptions.body, parse: buildOptions.bodyParser };
+			delete buildOptions.body;
+			delete buildOptions.bodyParser;
 		}
+
+		// set multipartOptions
+		buildOptions.bodyOptions ??= {};
 
 		// set endpoint
 		const endpoints = getEndpoints(controller.constructor as ControllerType);
@@ -41,6 +48,8 @@ export interface EndpointOptions {
 	param?: ParamSchema;
 	method?: HttpMethod;
 	query?: ValidationSchema;
+	queryRule?: ValidationRule;
+	queryParser?(x: any, rule: ObjectRule): any;
 	body?: ValidationSchema;
 	bodyRule?: ValidationRule;
 	bodyType?: BodyType;
@@ -48,6 +57,7 @@ export interface EndpointOptions {
 	authHandler?: AuthHandler | null;
 	middleware?: MiddlewareType | MiddlewareType[];
 	responseHandler?: ResponseHandler;
+	bodyOptions?: BodyOptions;
 }
 
 export interface BuiltEndpoint extends EndpointOptions {
@@ -61,7 +71,7 @@ export interface BuiltEndpoint extends EndpointOptions {
 	param: ParamSchema;
 	descriptor: PropertyDescriptor;
 	bodyType: BodyType;
-	queryRule?: ObjectRule;
+	bodyOptions: BodyOptions;
 }
 
 export interface RequestData<Auth = any, Query = any, Body = any> {

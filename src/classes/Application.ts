@@ -5,7 +5,7 @@ import * as qs from 'querystring';
 import { BuiltInject, DepInjectOptions, ProviderConstructor, TokenType } from '..';
 import type { ControllerType, MiddlewareType } from '../decorators/Controller';
 import type { BuiltEndpoint, HttpMethod, Params } from '../decorators/Endpoint';
-import { BodyOptions, Parsers, parseBody } from '../utils/parse-body';
+import { ApplicationBodyOptions, Parsers, parseBody } from '../utils/parse-body';
 import { parseCookie } from '../utils/parse-cookie';
 import { CONTROLLER_ENDPOINTS_TOKEN, INJECTABLE_OPTIONS_TOKEN, REQUEST_TOKEN, RESPONSE_TOKEN } from '../utils/tokens';
 import { HttpException } from './HttpException';
@@ -227,7 +227,7 @@ export class Application {
 	protected readonly _server: Server;
 	protected readonly _hooks: ApplicationHooks;
 	protected readonly _parsers: Parsers;
-	protected readonly _bodyOptions: BodyOptions;
+	protected readonly _bodyOptions: ApplicationBodyOptions;
 	protected readonly _middlewares: MiddlewareType[];
 	protected readonly _providers: BuiltProvider[];
 	protected readonly _endpoints: BuiltEndpoint[];
@@ -237,6 +237,13 @@ export class Application {
 
 	protected constructor(options: BuiltApplicationOptions) {
 		this._bodyOptions = options.bodyOptions;
+		this._bodyOptions.json ??= {};
+		this._bodyOptions.multipart ??= {};
+		this._bodyOptions.none ??= {};
+		this._bodyOptions.raw ??= {};
+		this._bodyOptions.stream ??= {};
+		this._bodyOptions.text ??= {};
+		this._bodyOptions.urlencoded ??= {};
 		this._providers = options.providers;
 		this._builtInjects = options.builtInjects;
 		this._endpoints = options.endpoints;
@@ -385,7 +392,7 @@ export class Application {
 				}
 
 				// Parse body
-				let body: any = await parseBody(req, endpoint.bodyType, parsers as Parsers, this._bodyOptions!);
+				let body: any = await parseBody(req, endpoint.bodyType, parsers as Parsers, { ...this._bodyOptions[endpoint.bodyType], ...endpoint.bodyOptions });
 
 				if (body !== void 0 && endpoint.bodyType !== 'stream') {
 					try {
@@ -479,7 +486,7 @@ export interface ApplicationOptions extends ServerOptions {
 	 * Body options for any body types
 	 * @default {}
 	 */
-	bodyOptions?: BodyOptions;
+	bodyOptions?: ApplicationBodyOptions;
 
 	/**
 	 * Array of controller types or controller paths
@@ -564,7 +571,7 @@ interface ApplicationHooks {
 }
 
 interface BuiltApplicationOptions {
-	bodyOptions: BodyOptions;
+	bodyOptions: ApplicationBodyOptions;
 	builtInjects: Map<ControllerType, BuiltInject[]>;
 	endpoints: BuiltEndpoint[];
 	hooks: ApplicationHooks;

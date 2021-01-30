@@ -120,14 +120,13 @@ describe('endpoints', () => {
 				middleware: [],
 				bodyType: 'multipart',
 				body: {
-					file: {
-						type: 'object',
-						schema: {
-							size: { type: 'number' },
-							path: { type: 'string' },
-							name: { type: 'string' },
-							type: { type: 'string' },
-						},
+					text: { type: 'string' },
+					file: { type: 'object', unknown: true },
+				},
+				bodyOptions: {
+					uploadsDirectory: 'tmp',
+					filename(file): string {
+						return file.filename;
 					},
 				},
 			})
@@ -211,14 +210,6 @@ describe('endpoints', () => {
 					expect(Array.isArray(providers)).toBe(true);
 				},
 			},
-			bodyOptions: {
-				multipart: {
-					filename(filename) {
-						return `${Math.random().toString(16)
-							.substring(2)}_${filename}`;
-					},
-				},
-			},
 		});
 
 		await startApplication(app, 3000);
@@ -298,11 +289,15 @@ describe('endpoints', () => {
 				data.append('text', 'text');
 				data.append('file', createReadStream('test/files/test.txt'));
 
-				const res = await http.post<{ payload: { file: {} } }>(`http://localhost:3000/filled/multipart`, { body: data });
+				const res = await http.post<{ payload: { text: string; file: { filename: string; mimetype: string; charset: string; path: string } } }>(`http://localhost:3000/filled/multipart`, { body: data });
 				const body = await res.body();
 
 				expect(body).toBeTruthy();
-				expect(body.payload.file).toBeTruthy();
+				expect(body.payload.text).toBe('text');
+				expect(body.payload.file.mimetype).toBe('text/plain');
+				expect(body.payload.file.charset).toBe('utf-8');
+				expect(body.payload.file.filename).toBe('test.txt');
+				expect(body.payload.file.path.endsWith('test.txt')).toBe(true);
 				expect(res.statusCode).toBe(200);
 			})());
 		}
