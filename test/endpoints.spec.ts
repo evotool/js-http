@@ -119,10 +119,13 @@ describe('endpoints', () => {
 				middleware: [],
 				bodyType: 'multipart',
 				body: {
-					file: { type: 'object', unknown: true },
-					type: { type: 'string', values: ['image'] },
-					name: { type: 'string' },
-					alt: { type: 'string' },
+					file: {
+						type: 'object' as const,
+						unknown: true,
+					},
+					type: { type: 'string' as const, values: ['image' as const] },
+					name: { type: 'string' as const },
+					alt: { type: 'string' as const },
 				},
 				bodyOptions: {
 					uploadsDirectory: 'tmp',
@@ -131,7 +134,7 @@ describe('endpoints', () => {
 					},
 				},
 			})
-			multipart({ body }: RequestData<any, {}, { file: File }>): { file: File } {
+			multipart({ body }: RequestData<any, {}, { file: Partial<File>; type: 'image'; name: string; alt: string }>): { [key: string]: any } {
 				return body;
 			}
 
@@ -286,7 +289,7 @@ describe('endpoints', () => {
 
 		for (let i = 0; i < REPEAT_COUNT; i++) {
 			promises.push((async (): Promise<void> => {
-				const res = await http.post<{ payload: { type: 'image'; name: string; alt: string; file: { filename: string; mimetype: string; charset: string; path: string } } }>(`http://localhost:3000/filled/multipart`, {
+				const res = await http.post<{ payload: { type: 'image'; name: string; alt: string; file: { name: string; type: string; size: number; encoding: string; path: string } } }>(`http://localhost:3000/filled/multipart`, {
 					headers: {
 						'Content-Type': 'multipart/form-data; boundary=----WebKitFormBoundaryJNqLtJvuSsf0N35T',
 					},
@@ -319,9 +322,10 @@ describe('endpoints', () => {
 				expect(body.payload.type).toBe('image');
 				expect(body.payload.name).toBe('');
 				expect(body.payload.alt).toBe('alt_');
-				expect(body.payload.file.mimetype).toBe('image/png');
-				expect(body.payload.file.charset).toBe('utf-8');
-				expect(body.payload.file.filename).toBe('test');
+				expect(body.payload.file.type).toBe('image/png');
+				expect(body.payload.file.encoding).toBe('utf-8');
+				expect(typeof body.payload.file.size).toBe('number');
+				expect(body.payload.file.name).toBe('test');
 				expect(body.payload.file.path.endsWith('test')).toBe(true);
 				expect(res.statusCode).toBe(200);
 			})());

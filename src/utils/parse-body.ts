@@ -31,7 +31,7 @@ function randhash(length: number): string {
 	return out.substring(0, length);
 }
 
-function filename(file: MultipartPart): string {
+function filename(file: MultipartFile): string {
 	if (file.filename) {
 		return file.filename;
 	}
@@ -57,7 +57,7 @@ export function parseMultipart(req: IncomingMessage, boundary: string, encoding:
 		let received = 0;
 		let state = 0,
 			contentDispositionData: { [key: string]: string } = {},
-			mimetype = '',
+			filetype = '',
 			prevChunk: Buffer | undefined,
 			startIndex = 0,
 			prevStartIndex = 0;
@@ -207,7 +207,7 @@ export function parseMultipart(req: IncomingMessage, boundary: string, encoding:
 					prevStartIndex = 0;
 
 					if (startIndex === endIndex) {
-						mimetype = '';
+						filetype = '';
 					} else {
 						const contentTypeLine = chunk.slice(startIndex, endIndex).toString(encoding);
 
@@ -217,7 +217,7 @@ export function parseMultipart(req: IncomingMessage, boundary: string, encoding:
 							throw new Error();
 						}
 
-						mimetype = m[1];
+						filetype = m[1];
 						startIndex = endIndex + CRLF.length; // 2x crlf
 					}
 
@@ -239,30 +239,35 @@ export function parseMultipart(req: IncomingMessage, boundary: string, encoding:
 
 					endIndex -= CRLF.length;
 
-					const part = contentDispositionData as MultipartPart;
+					const part = contentDispositionData as unknown as MultipartFile;
 					const b = chunk.slice(startIndex, endIndex);
 					part.charset = BUFFER_ENCODINGS.includes(part.charset as BufferEncoding) ? part.charset as BufferEncoding : encoding;
 
 					let data: File | string;
 					let name: keyof typeof output;
 
-					if (mimetype) {
+					if (filetype) {
 						if (b.byteLength > options.maxFileSize!) {
 							throw new HttpException(400, `maxFileSize exceeded, received ${b.byteLength} bytes of file data`, { maxFileSize: options.maxFileSize, byteLength: b.byteLength });
 						}
 
-						part.mimetype = mimetype;
-						part.path = path.resolve(options.uploadsDirectory!, options.filename!(part));
-						part.size = b.byteLength;
+						part.filetype = filetype;
+						part.filesize = b.byteLength;
 
-						const f = part.path;
+						const f = path.resolve(options.uploadsDirectory!, options.filename!(part));
 						const d = path.dirname(f);
 						const o = { encoding: part.charset };
 
 						writeFilePromises.push(new Promise<string>((r, t) => fs.mkdir(d, mkdirOptions, (e) => e ? t(e) : fs.writeFile(f, b, o, (e) => e ? t(e) : r(f)))));
 						name = part.name;
-						data = part as File;
-						delete data.name;
+
+						data = {
+							path: f,
+							name: part.filename,
+							size: part.filesize,
+							type: part.filetype,
+							encoding: part.charset,
+						};
 					} else {
 						if (b.byteLength > options.maxFieldSize!) {
 							throw new HttpException(400, `maxFieldSize exceeded, received ${b.byteLength} bytes of field data`, { maxFieldSize: options.maxFieldSize, byteLength: b.byteLength });
@@ -283,7 +288,7 @@ export function parseMultipart(req: IncomingMessage, boundary: string, encoding:
 					}
 
 					contentDispositionData = {};
-					mimetype = '';
+					filetype = '';
 					startIndex = endIndex + CRLF.length;
 					state = 0;
 
@@ -552,7 +557,7 @@ export interface MultipartOptions {
 	maxFileSize?: number;
 	maxFieldSize?: number;
 	uploadsDirectory?: string;
-	filename?(part: Omit<MultipartPart, 'path'>): string;
+	filename?(part: MultipartFile): string;
 }
 
 export type JsonData = string | number | boolean | null | object | JsonData[];
@@ -561,18 +566,22 @@ export interface UrlencodedData {
 	[key: string]: string | string[];
 }
 
-export type File = Omit<MultipartPart, 'name'>;
+export interface File {
+	name: string;
+	path: string;
+	size: number;
+	type: string;
+	encoding: BufferEncoding;
+}
 
 export interface MultipartData {
 	[key: string]: string | File | (string | File)[];
 }
 
-interface MultipartPart {
-	mimetype: string;
+interface MultipartFile {
 	filename: string;
+	filesize: number;
+	filetype: string;
 	charset: BufferEncoding;
-	path: string;
 	name: string;
-	size: number;
-	[key: string]: any;
 }
