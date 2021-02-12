@@ -5,10 +5,11 @@
 		"emitDecoratorMetadata": true,
 		"experimentalDecorators": true,
 		"lib": ["esnext"],
+		"module": "commonjs",
 		"moduleResolution": "node",
 		"outDir": "dist/",
 		"strict": true,
-		"target": "es5"
+		"target": "es6"
 	},
 	"exclude": ["node_modules/", "dist/"]
 }
