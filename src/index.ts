@@ -3,6 +3,7 @@ import 'reflect-metadata';
 export {
 	Application,
 	ApplicationOptions,
+	AsyncImportFn,
 	ClassProviderOptions,
 	FactoryProviderOptions,
 	Provider,
@@ -18,7 +19,7 @@ export {
 export {
 	Controller,
 	ControllerOptions,
-	ControllerType,
+	ControllerConstructor,
 	MiddlewareType,
 } from './decorators/Controller';
 

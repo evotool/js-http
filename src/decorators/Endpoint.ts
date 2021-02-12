@@ -5,7 +5,7 @@ import { ResponseHandler } from '../classes/Application';
 import { getEndpoints } from '../utils/get-endpoints';
 import { BodyOptions, BodyType } from '../utils/parse-body';
 import { Cookies } from '../utils/parse-cookie';
-import { ControllerType, MiddlewareType } from './Controller';
+import { ControllerConstructor, MiddlewareType } from './Controller';
 
 export function Endpoint<O extends EndpointOptions>(options: O = {} as O): EndpointDecorator<O> {
 	return (controller, propertyKey, descriptor) => {
@@ -35,7 +35,7 @@ export function Endpoint<O extends EndpointOptions>(options: O = {} as O): Endpo
 		buildOptions.bodyOptions ??= {};
 
 		// set endpoint
-		const endpoints = getEndpoints(controller.constructor as ControllerType);
+		const endpoints = getEndpoints(controller.constructor as ControllerConstructor);
 		endpoints.push(buildOptions);
 	};
 }
@@ -63,7 +63,7 @@ export interface EndpointOptions {
 export interface BuiltEndpoint extends EndpointOptions {
 	name: string;
 	method: HttpMethod;
-	controller: ControllerType;
+	controller: ControllerConstructor;
 	handler: EndpointHandler;
 	path: string;
 	pathRegex: RegExp;
@@ -112,4 +112,4 @@ BT extends keyof StaticBodyTypes ? StaticBodyTypes[BT] :
 			BR extends PrimitiveRule ? RuleType<BR> : any;
 
 type OptionsRequestData<O extends EndpointOptions> = RequestData<AuthValue<O['authHandler']>, QueryValue<O['query']>, BodyValue<O['bodyType'], O['body'], O['bodyParser'], O['bodyRule']>>;
-type EndpointDecorator<O extends EndpointOptions> = <M extends (requestData: OptionsRequestData<O>) => any>(controller: InstanceType<ControllerType>, propertyKey: string, descriptor: TypedPropertyDescriptor<M>) => void;
+type EndpointDecorator<O extends EndpointOptions> = <M extends (requestData: OptionsRequestData<O>) => any>(controller: InstanceType<ControllerConstructor>, propertyKey: string, descriptor: TypedPropertyDescriptor<M>) => void;

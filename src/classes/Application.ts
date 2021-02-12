@@ -3,7 +3,7 @@ import { IncomingMessage, Server, ServerOptions, ServerResponse, createServer } 
 import * as qs from 'querystring';
 
 import { BuiltInject, DepInjectOptions, ProviderConstructor, TokenType } from '..';
-import type { ControllerType, MiddlewareType } from '../decorators/Controller';
+import type { ControllerConstructor, MiddlewareType } from '../decorators/Controller';
 import type { BuiltEndpoint, HttpMethod, Params } from '../decorators/Endpoint';
 import { ApplicationBodyOptions, Parsers, parseBody } from '../utils/parse-body';
 import { parseCookie } from '../utils/parse-cookie';
@@ -11,14 +11,14 @@ import { CONTROLLER_ENDPOINTS_TOKEN, INJECTABLE_OPTIONS_TOKEN, REQUEST_TOKEN, RE
 import { HttpException } from './HttpException';
 
 export class Application {
-	protected static async _loadControllers(controllers: (ControllerType | string)[]): Promise<ControllerType[]> {
+	protected static async _loadControllers(controllers: (ControllerConstructor | AsyncImportFn)[]): Promise<ControllerConstructor[]> {
 		controllers = Array.from(controllers);
 
 		for (let i = 0, a = controllers, l = a.length, x = a[i]; i < l; x = a[++i]) {
-			if (typeof x === 'string') {
-				const imports = await import(x);
+			if (!Reflect.hasMetadata(CONTROLLER_ENDPOINTS_TOKEN, x)) {
+				const imports = await (x as AsyncImportFn)();
 				const controllersFromImport = Object.values(imports)
-					.filter((c) => typeof c === 'function' && Reflect.hasMetadata(CONTROLLER_ENDPOINTS_TOKEN, c)) as ControllerType[];
+					.filter((c) => typeof c === 'function' && Reflect.hasMetadata(CONTROLLER_ENDPOINTS_TOKEN, c)) as ControllerConstructor[];
 				a.splice(i, 1, ...controllersFromImport);
 				l = a.length;
 			}
@@ -31,18 +31,18 @@ export class Application {
 			}
 		}
 
-		return controllers as ControllerType[];
+		return controllers as ControllerConstructor[];
 	}
 
-	protected static async _loadProviders(providers: (Provider | string)[]): Promise<BuiltProvider[]> {
+	protected static async _loadProviders(providers: (Provider | AsyncImportFn)[]): Promise<BuiltProvider[]> {
 		providers = Array.from(providers);
 
 		// Load provider from imports
 		for (let i = 0, a = providers, l = a.length, x = a[i]; i < l; x = a[++i]) {
-			if (typeof x === 'string') {
-				const imports = await import(x);
+			if (!Reflect.hasMetadata(INJECTABLE_OPTIONS_TOKEN, x) && typeof x !== 'object') {
+				const imports = await (x as AsyncImportFn)();
 				const providersFromImport = Object.values(imports)
-					.filter((c) => typeof c === 'function' && Reflect.hasMetadata(INJECTABLE_OPTIONS_TOKEN, c)) as Provider[];
+					.filter((c) => typeof c === 'function' && Reflect.hasMetadata(INJECTABLE_OPTIONS_TOKEN, c) && !Reflect.hasMetadata(CONTROLLER_ENDPOINTS_TOKEN, c)) as Provider[];
 				a.splice(i, 1, ...providersFromImport);
 				l = a.length;
 			}
@@ -129,7 +129,7 @@ export class Application {
 		return builtProviders;
 	}
 
-	protected static _loadEndpoints(controllers: ControllerType[]): BuiltEndpoint[] {
+	protected static _loadEndpoints(controllers: ControllerConstructor[]): BuiltEndpoint[] {
 		const endpoints: BuiltEndpoint[] = controllers
 			.filter((c) => typeof c === 'function' && Reflect.hasMetadata(CONTROLLER_ENDPOINTS_TOKEN, c))
 			.map((c) => {
@@ -152,8 +152,8 @@ export class Application {
 		return endpoints;
 	}
 
-	protected static _collectBuiltInjects(controllers: ControllerType[]): Map<ControllerType, BuiltInject[]> {
-		const injects = new Map<ControllerType, BuiltInject[]>();
+	protected static _collectBuiltInjects(controllers: ControllerConstructor[]): Map<ControllerConstructor, BuiltInject[]> {
+		const injects = new Map<ControllerConstructor, BuiltInject[]>();
 
 		for (const c of controllers) {
 			const bi = Reflect.getMetadata(INJECTABLE_OPTIONS_TOKEN, c) as BuiltInject[];
@@ -182,11 +182,11 @@ export class Application {
 		controllers = await this._loadControllers(controllers || []);
 
 		if (hooks.controllersLoad) {
-			await hooks.controllersLoad(controllers as ControllerType[]);
+			await hooks.controllersLoad(controllers as ControllerConstructor[]);
 		}
 
 		// collect builtInjects
-		builtOptions.builtInjects = this._collectBuiltInjects(controllers as ControllerType[]);
+		builtOptions.builtInjects = this._collectBuiltInjects(controllers as ControllerConstructor[]);
 
 		// Load providers
 		builtOptions.providers = await this._loadProviders(providers || []);
@@ -196,7 +196,7 @@ export class Application {
 		}
 
 		// Load endpoints
-		builtOptions.endpoints = this._loadEndpoints(controllers as ControllerType[]);
+		builtOptions.endpoints = this._loadEndpoints(controllers as ControllerConstructor[]);
 
 		if (hooks.endpointsLoad) {
 			await hooks.endpointsLoad(builtOptions.endpoints);
@@ -231,7 +231,7 @@ export class Application {
 	protected readonly _middlewares: MiddlewareType[];
 	protected readonly _providers: BuiltProvider[];
 	protected readonly _endpoints: BuiltEndpoint[];
-	protected readonly _builtInjects = new Map<ControllerType, BuiltInject[]>();
+	protected readonly _builtInjects = new Map<ControllerConstructor, BuiltInject[]>();
 
 	readonly address: Readonly<{ host: string; port: number }> | null = null;
 
@@ -312,7 +312,7 @@ export class Application {
 		});
 	}
 
-	protected _buildControllerInstance(constructor: ControllerType, dynamicProviders: BuiltValueProvider[] = []): { [key: string]: any } {
+	protected _buildControllerInstance(constructor: ControllerConstructor, dynamicProviders: BuiltValueProvider[] = []): { [key: string]: any } {
 		const deps = this._builtInjects.get(constructor)!;
 		const args = this._resolveArgs((dynamicProviders as BuiltProvider[]).concat(this._providers), constructor, deps);
 
@@ -429,51 +429,51 @@ export class Application {
 	}
 
 	protected readonly _responseHandler: ResponseHandler = (res: ServerResponse, err: Error | null, payload: any) => {
-		interface Body {
+		interface ResponseBody {
 			statusCode: number;
 			message: string;
-			error: any | null;
-			payload: any | null;
+			payload: { [key: string]: any } | null;
+			error: { [key: string]: any } | null;
 		}
 
-		const body: Body = {
-			statusCode: 500,
-			message: 'Internal Server Error',
-			error: null,
-			payload: null,
-		};
+		const body: ResponseBody = { error: null, payload: null } as ResponseBody;
+
+		let statusMessage = body.message!;
+		let exception: HttpException | undefined;
 
 		if (err) {
 			if (err instanceof HttpException) {
-				body.statusCode = err.statusCode;
-				body.message = err.message || '';
-
-				if (err.details instanceof Error) {
-					const { message } = err.details;
-					body.error = { message };
-				} else {
-					body.error = err.details ?? {};
-				}
+				exception = err;
 			} else {
-				const { message, stack } = err;
-				body.error = { message, stack };
+				exception = new HttpException(500, undefined, err);
+			}
+
+			body.statusCode = exception.statusCode;
+			statusMessage = exception.message;
+
+			if (exception.details instanceof Error) {
+				const { message, stack } = exception.details;
+				body.error = { message, stack: exception.statusCode >= 500 ? stack : void 0 };
+			} else {
+				body.error = exception.details ?? {};
 			}
 		} else {
 			if (payload === null || payload === void 0) {
 				return res.writeHead(204, { 'Content-Length': '0' }).end();
 			}
 
+			statusMessage = res.statusMessage || '';
 			body.payload = payload;
-
 			body.statusCode = res.statusCode || 200;
-			body.message = res.statusMessage || '';
 		}
+
+		body.message = statusMessage;
 
 		const data = Buffer.from(JSON.stringify(body), 'utf-8');
 
 		return res.writeHead(body.statusCode!, '', {
 			'Content-Type': 'application/json; charset=utf-8',
-			'Content-Length': data.byteLength.toString(),
+			'Content-Length': `${data.byteLength}`,
 		}).end(data);
 	};
 }
@@ -492,7 +492,7 @@ export interface ApplicationOptions extends ServerOptions {
 	 * Array of controller types or controller paths
 	 * @default []
 	 */
-	controllers?: (ControllerType | string)[];
+	controllers?: (ControllerConstructor | AsyncImportFn)[];
 
 	/**
 	 * @default {}
@@ -512,7 +512,7 @@ export interface ApplicationOptions extends ServerOptions {
 	/**
 	 * @default []
 	 */
-	providers?: (Provider | string)[];
+	providers?: (Provider | AsyncImportFn)[];
 	responseHandler?: ResponseHandler;
 }
 
@@ -542,6 +542,8 @@ export type Provider =
 | ProviderConstructor
 | ProviderOptions;
 
+export type AsyncImportFn =  () => any | Promise<any>;
+
 interface BuiltValueProvider {
 	provide: TokenType;
 	useValue: any;
@@ -565,14 +567,14 @@ type BuiltProvider =
 | BuiltFactoryProvider;
 
 interface ApplicationHooks {
-	controllersLoad?(controllers: ControllerType[]): void | PromiseLike<void>;
+	controllersLoad?(controllers: ControllerConstructor[]): void | PromiseLike<void>;
 	providersLoad?(providers: BuiltProvider[]): void | PromiseLike<void>;
 	endpointsLoad?(endpoints: BuiltEndpoint[]): void | PromiseLike<void>;
 }
 
 interface BuiltApplicationOptions {
 	bodyOptions: ApplicationBodyOptions;
-	builtInjects: Map<ControllerType, BuiltInject[]>;
+	builtInjects: Map<ControllerConstructor, BuiltInject[]>;
 	endpoints: BuiltEndpoint[];
 	hooks: ApplicationHooks;
 	middlewares: MiddlewareType[];

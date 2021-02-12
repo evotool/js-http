@@ -2,7 +2,8 @@ import { HttpClient } from '@evojs/http-client';
 import { readFileSync } from 'fs';
 import { isDeepStrictEqual } from 'util';
 
-import { Application, Controller, ControllerType, Endpoint, File, HttpException, Inject, Injectable, MiddlewareType, Provider, RequestData } from '../src';
+import { Application, Controller, ControllerConstructor, Endpoint, File, HttpException, Inject, Injectable, MiddlewareType, Provider, RequestData } from '../src';
+import { AsyncImportFn } from '../src/classes/Application';
 import { createApplication, startApplication, stopApplication } from './files/test-utils';
 
 jest.setTimeout(30000);
@@ -10,8 +11,8 @@ jest.setTimeout(30000);
 const http = new HttpClient({ debug() {} });
 
 describe('endpoints', () => {
-	const providers: (Provider | string)[] = [];
-	const controllers: (ControllerType | string)[] = [];
+	const providers: (Provider | AsyncImportFn)[] = [];
+	const controllers: (ControllerConstructor | AsyncImportFn)[] = [];
 	const middlewares: MiddlewareType[] = [];
 	let app: Application;
 
@@ -195,8 +196,8 @@ describe('endpoints', () => {
 	});
 
 	it('should start server with controller', async (done) => {
-		controllers.push('../../test/files/controller.ts');
-		providers.push('../../test/files/service.ts');
+		controllers.push(() => require('../test/files/controller'));
+		providers.push(() => import('../test/files/service'));
 		middlewares.push((req, res) => req.url?.startsWith('/test') ?? false);
 
 		app = await createApplication({
@@ -316,7 +317,6 @@ describe('endpoints', () => {
 					]),
 				});
 				const body = await res.body();
-				console.log(body);
 
 				expect(body).toBeTruthy();
 				expect(body.payload.type).toBe('image');

@@ -74,6 +74,6 @@ export interface BuiltControllerOptions extends BuiltInjectable {
 }
 
 export type MiddlewareType = (req: IncomingMessage, res: ServerResponse) => boolean | PromiseLike<boolean>;
-export type ControllerType = new (...args: any[]) => { [key: string]: any };
+export type ControllerConstructor = new (...args: any[]) => { [key: string]: any };
 
-type ControllerDecorator = (constructor: ControllerType) => void;
+type ControllerDecorator = (constructor: ControllerConstructor) => void;
