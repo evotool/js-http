@@ -516,7 +516,6 @@ describe('endpoints', () => {
 
 		let res = await http.get<{ payload: {} }>('http://localhost:3002/test');
 		const body = await res.body();
-		console.log(body);
 		expect(res.statusCode).toBe(200);
 		expect(isDeepStrictEqual(body.payload, {})).toBe(true);
 
