@@ -1,6 +1,6 @@
 {
 	"name": "@evojs/http",
-	"version": "2.0.0-rc.1",
+	"version": "2.0.0-rc.2",
 	"description": "Nodejs server MVC framework",
 	"license": "MIT",
 	"main": "index.js",

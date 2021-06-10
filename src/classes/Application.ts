@@ -1,8 +1,12 @@
 import { validate } from '@evojs/validator/validate';
-import { IncomingMessage, Server, ServerResponse, createServer } from 'http';
+import { IncomingMessage, Server, ServerOptions, ServerResponse, createServer } from 'http';
 import * as querystring from 'querystring';
 
-import { parseBody } from '../utils/parsers';
+import { ControllerData, ControllerDataMap } from '../decorators/Controller';
+import { EndpointData, Params } from '../decorators/Endpoint';
+import { InjectData } from '../decorators/Inject';
+import { Scope } from '../decorators/Injectable';
+import { ApplicationBodyOptions, Parsers, parseBody } from '../utils/parsers';
 import {
 	findControllerData,
 	findInjectableData,
@@ -11,29 +15,6 @@ import {
 	removeControllerData,
 	removeInjectableData,
 } from '../utils/reflect';
-import {
-	Address,
-	ApplicationBodyOptions,
-	ApplicationData,
-	ApplicationHooks,
-	ApplicationOptions,
-	ClassProviderData,
-	Constructor,
-	ControllerData,
-	ControllerDataMap,
-	EndpointData,
-	FactoryProviderData,
-	ImportOrRequireFn,
-	InjectData,
-	Middleware,
-	Params,
-	Parsers,
-	Provider,
-	ProviderData,
-	ResponseHandler,
-	Scope,
-	ValueProviderData,
-} from '../utils/types';
 import {
 	BadRequestException,
 	HttpException,
@@ -553,4 +534,121 @@ export class Application {
 
 		return new Application(data);
 	}
+}
+
+export type Middleware = (req: IncomingMessage, res: ServerResponse) => any | PromiseLike<any>;
+
+export interface Constructor<T = any> {
+	new (...args: any[]): T;
+	[key: string]: any;
+}
+
+export type Address = Readonly<{ host: string; port: number }>;
+export type ResponseHandler = (res: ServerResponse, err: Error | null, body: any) => void | PromiseLike<void>;
+
+export interface ApplicationOptions extends ServerOptions {
+
+	/**
+	 * Body options for any body types
+	 * @default {}
+	 */
+	bodyOptions?: ApplicationBodyOptions;
+
+	/**
+	 * Array of controller types or controller paths
+	 * @default []
+	 */
+	controllers?: (Constructor | ImportOrRequireFn)[];
+
+	/**
+	 * @default {}
+	 */
+	hooks?: ApplicationHooks;
+
+	/**
+	 * @default []
+	 */
+	middlewares?: Middleware[];
+
+	/**
+	 * @default Parsers
+	 */
+	parsers?: Partial<Parsers>;
+
+	/**
+	 * @default []
+	 */
+	providers?: (Provider | ImportOrRequireFn)[];
+	responseHandler?: ResponseHandler;
+}
+
+export interface ValueProvider {
+	provide: any;
+	useValue: any;
+	scope?: Scope;
+}
+
+export interface ClassProvider {
+	provide: any;
+	useClass: Constructor;
+	scope?: Scope;
+	deps?: any[];
+}
+
+export interface FactoryProvider {
+	provide: any;
+	useFactory(...args: any[]): any;
+	scope?: Scope;
+	deps?: any[];
+}
+
+export type Provider =
+| Constructor
+| ValueProvider
+| ClassProvider
+| FactoryProvider;
+
+export type ImportOrRequireFn = () => any | Promise<any>;
+
+export interface ValueProviderData {
+	provide: any;
+	useValue: any;
+	scope: Scope;
+}
+
+export interface ClassProviderData {
+	provide: any;
+	useClass: Constructor;
+	scope: Scope;
+	injects: InjectData[];
+}
+
+export interface FactoryProviderData {
+	provide: any;
+	useFactory(...args: any[]): any;
+	scope: Scope;
+	injects: InjectData[];
+}
+
+export type ProviderData =
+| ValueProviderData
+| ClassProviderData
+| FactoryProviderData;
+
+export interface ApplicationHooks {
+	controllersLoad?(controllers: ControllerDataMap): void | PromiseLike<void>;
+	providersLoad?(providers: ProviderData[]): void | PromiseLike<void>;
+	endpointsLoad?(endpoints: EndpointData[]): void | PromiseLike<void>;
+	middlewareExceptions?(middleware: Middleware, value: any): void | PromiseLike<void>;
+}
+
+export interface ApplicationData {
+	bodyOptions: ApplicationBodyOptions;
+	controllers: ControllerDataMap;
+	endpoints: EndpointData[];
+	hooks: ApplicationHooks;
+	middlewares: Middleware[];
+	parsers: Parsers;
+	providers: ProviderData[];
+	responseHandler?: ResponseHandler;
 }

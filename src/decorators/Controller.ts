@@ -1,7 +1,9 @@
 
+import { Constructor, Middleware, ResponseHandler } from '../classes/Application';
 import { parseName, parsePath } from '../utils/parsers';
 import { findOrCreateControllerData, setInjects } from '../utils/reflect';
-import { ControllerData, ControllerDecorator, ControllerOptions, Middleware } from '../utils/types';
+import { AuthHandler, EndpointData, ParamSchema } from './Endpoint';
+import { InjectableData, InjectableOptions } from './Injectable';
 
 export function Controller(options: ControllerOptions = {}): ControllerDecorator {
 	return (constructor) => {
@@ -48,3 +50,26 @@ export function Controller(options: ControllerOptions = {}): ControllerDecorator
 		setInjects(constructor, controller);
 	};
 }
+
+export interface ControllerOptions extends InjectableOptions {
+	path?: string;
+	param?: ParamSchema;
+	useMethodNames?: boolean;
+	authHandler?: AuthHandler;
+	middleware?: Middleware | Middleware[];
+	responseHandler?: ResponseHandler;
+}
+
+export interface ControllerData extends InjectableData {
+	path: string;
+	param: ParamSchema;
+	useMethodNames: boolean;
+	authHandler: AuthHandler | undefined;
+	middleware: Middleware[];
+	responseHandler: ResponseHandler | undefined;
+	endpoints: EndpointData[];
+}
+
+export type ControllerDataMap = Map<Constructor, ControllerData>;
+
+export type ControllerDecorator = (constructor: Constructor) => void;

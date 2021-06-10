@@ -1,4 +1,8 @@
-import { Constructor, ControllerData, EndpointData, InjectData, InjectableData } from './types';
+import { Constructor } from '../classes/Application';
+import { ControllerData } from '../decorators/Controller';
+import { EndpointData } from '../decorators/Endpoint';
+import { InjectData } from '../decorators/Inject';
+import { InjectableData } from '../decorators/Injectable';
 
 const CONTROLLER_TOKEN = '@evojs/http:controller';
 const INJECT_TOKEN = '@evojs/http:inject';

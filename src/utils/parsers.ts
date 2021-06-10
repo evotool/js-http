@@ -15,18 +15,7 @@ import {
 	PayloadTooLargeException,
 	UnsupportedMediaTypeException,
 } from '../classes/HttpException';
-import {
-	BodyOptions,
-	BodyType,
-	File,
-	JsonData,
-	MultipartData,
-	MultipartFile,
-	MultipartOptions,
-	ParamSchema,
-	Parsers,
-	UrlencodedData,
-} from './types';
+import { ParamSchema } from '../decorators/Endpoint';
 
 export const BUFFER_ENCODINGS: BufferEncoding[] = ['ascii', 'utf8', 'utf-8', 'utf16le', 'ucs2', 'ucs-2', 'base64', 'latin1', 'binary', 'hex'];
 
@@ -576,4 +565,58 @@ export function snakeCase(value: string): string {
 
 export function parseName(name: string, postfix?: string): string {
 	return snakeCase(typeof postfix === 'string' ? name.replace(new RegExp(`${postfix}$`), '') : name);
+}
+
+export interface Parsers {
+	json: {
+		parse(text: string): any;
+		stringify(value: any): string;
+	};
+	urlencoded: {
+		queryMode?: boolean;
+		parse(text: string): any;
+		stringify(value: any): string;
+	};
+}
+
+export type BodyType = 'none' | 'urlencoded' | 'json' | 'multipart' | 'text' | 'raw';
+
+export type ApplicationBodyOptions = {
+	multipart?: MultipartOptions;
+} & Partial<Record<Exclude<BodyType, 'multipart'>, { contentLengthLimit?: number }>>;
+
+export type BodyOptions = NonNullable<ApplicationBodyOptions[BodyType]>;
+
+export interface MultipartOptions {
+	contentLengthLimit?: number;
+	maxFileSize?: number;
+	maxFieldSize?: number;
+	uploadsDirectory?: string;
+	filename?(part: MultipartFile): string;
+}
+
+export type JsonData = string | number | boolean | null | object | JsonData[];
+
+export interface UrlencodedData {
+	[key: string]: string | string[];
+}
+
+export interface File {
+	name: string;
+	path: string;
+	size: number;
+	type: string;
+	encoding: BufferEncoding;
+}
+
+export interface MultipartData {
+	[key: string]: string | File | (string | File)[];
+}
+
+interface MultipartFile {
+	filename: string;
+	filesize: number;
+	filetype: string;
+	charset: BufferEncoding;
+	name: string;
 }

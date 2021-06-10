@@ -1,5 +1,5 @@
+import { Constructor } from '../classes/Application';
 import { findOrCreateInjectData } from '../utils/reflect';
-import { InjectDecorator } from '../utils/types';
 
 export function Inject<T = any>(token?: T): InjectDecorator {
 	return (constructor, _, index) => {
@@ -19,4 +19,11 @@ export function Optional(): InjectDecorator {
 
 		options.optional = true;
 	};
+}
+
+export type InjectDecorator = (constructor: Constructor, _: string, index: number) => void;
+
+export interface InjectData {
+	token: any;
+	optional?: boolean;
 }

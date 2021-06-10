@@ -1,6 +1,6 @@
 import { IncomingMessage, ServerResponse } from 'http';
 
-import { Controller, Endpoint, RequestData } from '../../src';
+import { Controller, Endpoint, Request } from '../../src';
 import { ImportedService } from './service';
 
 @Controller({
@@ -17,7 +17,7 @@ export class ImportedController {
 			name: { type: 'string', min: 1 },
 		},
 	})
-	sayHello({ body: { name } }: RequestData<null, {}, { name: string }>): { payload: string } {
+	sayHello({ body: { name } }: Request<null, {}, { name: string }>): { payload: string } {
 		return { payload: this.hello.sayHello(name) };
 	}
 
@@ -26,7 +26,7 @@ export class ImportedController {
 		path: 'hello/:name(\\w+)',
 		authHandler: () => {},
 	})
-	sayHelloUrl({ params: { name } }: RequestData<void, {}, undefined>): { payload: string } {
+	sayHelloUrl({ params: { name } }: Request<void, {}, undefined>): { payload: string } {
 		return { payload: this.hello.sayHello(name) };
 	}
 }

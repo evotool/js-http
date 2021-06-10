@@ -2,9 +2,7 @@ import { HttpClient } from '@evojs/http-client';
 import { readFileSync } from 'fs';
 import { isDeepStrictEqual } from 'util';
 
-import { Application, Constructor, Controller, Endpoint, File, HttpException, Inject, Injectable, Middleware, Provider, RequestData } from '../src';
-import { Optional } from '../src/decorators/Inject';
-import { ImportOrRequireFn } from '../src/utils/types';
+import { Application, Constructor, Controller, Endpoint, File, HttpException, ImportOrRequireFn, Inject, Injectable, Middleware, Optional, Provider, Request } from '../src';
 import { createApplication, startApplication, stopApplication } from './utils';
 
 jest.setTimeout(30000);
@@ -100,7 +98,7 @@ describe('endpoints', () => {
 					res.end(JSON.stringify(body));
 				},
 			})
-			async query({ query }: RequestData<any, { q?: string }>): Promise<{ q?: string }> {
+			async query({ query }: Request<any, { q?: string }>): Promise<{ q?: string }> {
 				await new Promise((r) => setTimeout(r, 10));
 
 				return { ...query };
@@ -112,7 +110,7 @@ describe('endpoints', () => {
 				method: 'GET',
 				middleware: [],
 			})
-			params({ body }: RequestData<any, {}, { file: File }>): { file: File } {
+			params({ body }: Request<any, {}, { file: File }>): { file: File } {
 				return body;
 			}
 
@@ -136,7 +134,7 @@ describe('endpoints', () => {
 					},
 				},
 			})
-			multipart({ body }: RequestData<any, {}, { file: Partial<File>; type: 'image'; name: string; alt: string }>): { [key: string]: any } {
+			multipart({ body }: Request<any, {}, { file: Partial<File>; type: 'image'; name: string; alt: string }>): { [key: string]: any } {
 				return body;
 			}
 
@@ -148,7 +146,7 @@ describe('endpoints', () => {
 					q: { type: 'string' },
 				},
 			})
-			json({ body }: RequestData<any, {}, { q: string }>): { q: string } {
+			json({ body }: Request<any, {}, { q: string }>): { q: string } {
 				return body;
 			}
 
@@ -160,7 +158,7 @@ describe('endpoints', () => {
 					q: { type: 'string' },
 				},
 			})
-			urlencoded({ body }: RequestData<any, {}, { q: string }>): { q: string } {
+			urlencoded({ body }: Request<any, {}, { q: string }>): { q: string } {
 				return body;
 			}
 		}
