@@ -1,39 +1,22 @@
-import { INJECT_OPTIONS_TOKEN, REQUEST_TOKEN, RESPONSE_TOKEN } from '../utils/tokens';
+import { findOrCreateInjectData } from '../utils/reflect';
+import { InjectDecorator } from '../utils/types';
 
-export function Inject(options: InjectOptions): ParameterDecorator;
-export function Inject(token: TokenType, options?: InjectOptions): ParameterDecorator;
-export function Inject(tokenOrOptions: TokenType | InjectOptions, options: InjectOptions = {}): ParameterDecorator {
-	return (target, _, index) => {
-		if (options.optional === void 0) {
-			options.optional = false;
+export function Inject<T = any>(token?: T): InjectDecorator {
+	return (constructor, _, index) => {
+		const options = findOrCreateInjectData(constructor, index);
+
+		options.token = token ?? constructor;
+
+		if (options.token === void 0) {
+			throw new Error('Invalid token');
 		}
-
-		const buildOptions = (
-			typeof tokenOrOptions === 'string' || typeof tokenOrOptions === 'function'
-				? { provide: tokenOrOptions, ...options }
-				: { ...tokenOrOptions }
-		) as BuiltInject;
-
-		Reflect.metadata(INJECT_OPTIONS_TOKEN, buildOptions)(target, index.toString());
 	};
 }
 
-export const Req: ParameterDecorator = Inject(REQUEST_TOKEN);
-export const Res: ParameterDecorator = Inject(RESPONSE_TOKEN);
+export function Optional(): InjectDecorator {
+	return (constructor, _, index) => {
+		const options = findOrCreateInjectData(constructor, index);
 
-export type InjectOptions = Partial<BuiltInject>;
-
-export interface DepInjectOptions {
-	provide: TokenType;
-	optional?: boolean;
-	default?: any;
+		options.optional = true;
+	};
 }
-
-export interface BuiltInject {
-	provide: TokenType;
-	optional: boolean;
-	default?: any;
-}
-
-export type ProviderConstructor = new (...args: any[]) => { [key: string]: any };
-export type TokenType = ProviderConstructor | string;

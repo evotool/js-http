@@ -2,18 +2,19 @@ import { HttpClient } from '@evojs/http-client';
 import { readFileSync } from 'fs';
 import { isDeepStrictEqual } from 'util';
 
-import { Application, Controller, ControllerConstructor, Endpoint, File, HttpException, Inject, Injectable, MiddlewareType, Provider, RequestData } from '../src';
-import { AsyncImportFn } from '../src/classes/Application';
-import { createApplication, startApplication, stopApplication } from './files/test-utils';
+import { Application, Constructor, Controller, Endpoint, File, HttpException, Inject, Injectable, Middleware, Provider, RequestData } from '../src';
+import { Optional } from '../src/decorators/Inject';
+import { ImportOrRequireFn } from '../src/utils/types';
+import { createApplication, startApplication, stopApplication } from './utils';
 
 jest.setTimeout(30000);
 
 const http = new HttpClient({ debug() {} });
 
 describe('endpoints', () => {
-	const providers: (Provider | AsyncImportFn)[] = [];
-	const controllers: (ControllerConstructor | AsyncImportFn)[] = [];
-	const middlewares: MiddlewareType[] = [];
+	const providers: (Provider | ImportOrRequireFn)[] = [];
+	const controllers: (Constructor | ImportOrRequireFn)[] = [];
+	const middlewares: Middleware[] = [];
 	let app: Application;
 
 	it('should initialize EmptyController', () => {
@@ -99,10 +100,10 @@ describe('endpoints', () => {
 					res.end(JSON.stringify(body));
 				},
 			})
-			async query({ query, cookies }: RequestData<any, { q?: string }>): Promise<{ q?: string; cookies: { q?: string } }> {
+			async query({ query }: RequestData<any, { q?: string }>): Promise<{ q?: string }> {
 				await new Promise((r) => setTimeout(r, 10));
 
-				return { ...query, cookies };
+				return { ...query };
 			}
 
 			@Endpoint({
@@ -170,7 +171,7 @@ describe('endpoints', () => {
 	it('should initialize empty service', () => {
 		@Injectable()
 		class EmptyService {
-			constructor(@Inject('EMPTY', { optional: true, default: {} }) readonly emptyObject: object) {}
+			constructor(@Inject('EMPTY') @Optional() readonly emptyObject: object = {}) {}
 
 			empty(): void {
 			}
@@ -180,9 +181,7 @@ describe('endpoints', () => {
 	});
 
 	it('should initialize filled service', () => {
-		@Injectable({
-			deps: [HttpClient],
-		})
+		@Injectable()
 		class FilledService {
 			constructor(readonly http: HttpClient) {
 			}
@@ -195,9 +194,9 @@ describe('endpoints', () => {
 		providers.push(FilledService);
 	});
 
-	it('should start server with controller', async (done) => {
+	it('should start server with controller', async () => {
 		controllers.push(() => require('../test/files/controller'));
-		providers.push(() => import('../test/files/service'));
+		providers.push(() => import('./files/service'), { provide: 'HELLO_WELCOME', useValue: 'Welcome!' });
 		middlewares.push((req, res) => req.url?.startsWith('/test') ?? false);
 
 		app = await createApplication({
@@ -206,7 +205,7 @@ describe('endpoints', () => {
 			middlewares,
 			hooks: {
 				controllersLoad(controllers) {
-					expect(Array.isArray(controllers)).toBe(true);
+					expect(controllers instanceof Map).toBe(true);
 				},
 				endpointsLoad(endpoints) {
 					expect(Array.isArray(endpoints)).toBe(true);
@@ -218,10 +217,11 @@ describe('endpoints', () => {
 		});
 
 		await startApplication(app, 3000);
-		done();
+
+		await http.get('http://localhost:3000/hello/world');
 	});
 
-	it('should check 404 response', async (done) => {
+	it('should check 404 response', async () => {
 		const REPEAT_COUNT = 1000;
 		const promises: Promise<any>[] = [];
 
@@ -231,20 +231,19 @@ describe('endpoints', () => {
 				const body = await res.body();
 
 				expect(isDeepStrictEqual(body, {
-					statusCode: 404,
-					message: '',
-					error: { message: 'Not found' },
+					error: {},
 					payload: null,
+					statusCode: 404,
+					message: 'Endpoint not found',
 				})).toBe(true);
 				expect(res.statusCode).toBe(404);
 			})());
 		}
 
 		await Promise.all(promises);
-		done();
 	});
 
-	it('should check 204 response', async (done) => {
+	it('should check 204 response', async () => {
 		const REPEAT_COUNT = 1000;
 		const promises: Promise<any>[] = [];
 
@@ -259,10 +258,9 @@ describe('endpoints', () => {
 		}
 
 		await Promise.all(promises);
-		done();
 	});
 
-	it('should check QUERY and COOKIES 200 response', async (done) => {
+	it('should check QUERY and COOKIES 200 response', async () => {
 		const REPEAT_COUNT = 10;
 		const promises: Promise<any>[] = [];
 
@@ -270,21 +268,18 @@ describe('endpoints', () => {
 			promises.push((async (): Promise<void> => {
 				const q = Math.random().toString(16)
 					.substring(2);
-				const qq = q.split('').reverse()
-					.join('');
-				const res = await http.get(`http://localhost:3000/filled/query?q=${q}`, { headers: { cookie: `q=${q}; qq=${q}; qq=${qq}` } });
+				const res = await http.get(`http://localhost:3000/filled/query?q=${q}`);
 				const body = await res.body();
 
-				expect(isDeepStrictEqual(body, { q, cookies: { q, qq: [q, qq] } })).toBe(true);
+				expect(isDeepStrictEqual(body, { q })).toBe(true);
 				expect(res.statusCode).toBe(200);
 			})());
 		}
 
 		await Promise.all(promises);
-		done();
 	});
 
-	it('should check MULTIPART 200 response', async (done) => {
+	it('should check MULTIPART 200 response', async () => {
 		const REPEAT_COUNT = 1;
 		const promises: Promise<any>[] = [];
 
@@ -332,10 +327,9 @@ describe('endpoints', () => {
 		}
 
 		await Promise.all(promises);
-		done();
 	});
 
-	it('should check URLENCODED 200 response', async (done) => {
+	it('should check URLENCODED 200 response', async () => {
 		const REPEAT_COUNT = 1;
 		const promises: Promise<any>[] = [];
 
@@ -356,10 +350,9 @@ describe('endpoints', () => {
 		}
 
 		await Promise.all(promises);
-		done();
 	});
 
-	it('should check JSON 200 response', async (done) => {
+	it('should check JSON 200 response', async () => {
 		const REPEAT_COUNT = 1;
 		const promises: Promise<any>[] = [];
 
@@ -377,12 +370,10 @@ describe('endpoints', () => {
 		}
 
 		await Promise.all(promises);
-		done();
 	});
 
-	it('should close connection', async (done) => {
+	it('should close connection', async () => {
 		await stopApplication(app);
-		done();
 	});
 
 	it('should create http exceptions', (done) => {
@@ -404,7 +395,7 @@ describe('endpoints', () => {
 		done();
 	});
 
-	it('should throw controller duplicate exception', async (done) => {
+	it('should throw controller duplicate exception', async () => {
 		@Controller()
 		class IndexController {}
 
@@ -412,11 +403,10 @@ describe('endpoints', () => {
 			await createApplication({ controllers: [IndexController, IndexController] });
 		} catch (err) {
 			expect(err.message).toBe('Controller was provided more than one times');
-			done();
 		}
 	});
 
-	it('should throw controller duplicate exception', async (done) => {
+	it('should throw controller duplicate exception', async () => {
 		@Controller()
 		class IndexController {
 			@Endpoint({
@@ -436,31 +426,28 @@ describe('endpoints', () => {
 			await createApplication({ controllers: [IndexController] });
 		} catch (err) {
 			expect(err.message).toBeDefined();
-			done();
 		}
 	});
 
-	it('should throw server error', async (done) => {
+	it('should throw server error', async () => {
 		try {
 			const app = await createApplication();
 			await stopApplication(app);
 		} catch (err) {
 			expect(err.message).toBeDefined();
-			done();
 		}
 	});
 
-	it('should throw server error', async (done) => {
+	it('should throw server error', async () => {
 		try {
 			const app = await createApplication();
 			await stopApplication(app);
 		} catch (err) {
 			expect(err.message).toBeDefined();
-			done();
 		}
 	});
 
-	it('should throw error "Provider was provided more than one times"', async (done) => {
+	it('should throw error "Provider was provided more than one times"', async () => {
 		try {
 			@Injectable()
 			class TestService {
@@ -471,11 +458,10 @@ describe('endpoints', () => {
 			});
 		} catch (err) {
 			expect(err.message).toBeDefined();
-			done();
 		}
 	});
 
-	it('should throw error ""Injectable" decorator do not provided to class"', async (done) => {
+	it('should throw error ""Injectable" decorator do not provided to class"', async () => {
 		try {
 			class TestService {
 			}
@@ -485,11 +471,10 @@ describe('endpoints', () => {
 			});
 		} catch (err) {
 			expect(err.message).toBeDefined();
-			done();
 		}
 	});
 
-	it('should build providers', async (done) => {
+	it('should build providers', async () => {
 		@Injectable()
 		class TestService {
 		}
@@ -506,10 +491,12 @@ describe('endpoints', () => {
 
 		@Controller()
 		class SecondTestController {
-			constructor(readonly test: any) {}
+			constructor(@Optional() readonly test: any) {}
 
 			@Endpoint()
 			index(): {} {
+				throw new Error();
+
 				return {};
 			}
 		}
@@ -517,9 +504,9 @@ describe('endpoints', () => {
 		const app = await createApplication({
 			controllers: [TestController, SecondTestController],
 			providers: [
-				{ provide: TestService, useClass: TestService, deps: [{ provide: TestService, optional: true }, { provide: 'FACTORY' }, 'VALUE'] }, // should removed
+				{ provide: TestService, useClass: TestService, deps: [TestService, 'FACTORY', 'VALUE'] }, // should removed
 				{ provide: TestService, useClass: TestService },
-				{ provide: 'FACTORY', useFactory: () => null, deps: [{ provide: TestService, optional: true }, { provide: 'FACTORY' }, 'VALUE'] }, // should removed
+				{ provide: 'FACTORY', useFactory: () => null, deps: [TestService, 'FACTORY', 'VALUE'] }, // should removed
 				{ provide: 'FACTORY', useFactory: () => 1 },
 				{ provide: 'VALUE', useValue: 2 },
 			],
@@ -529,6 +516,7 @@ describe('endpoints', () => {
 
 		let res = await http.get<{ payload: {} }>('http://localhost:3002/test');
 		const body = await res.body();
+		console.log(body);
 		expect(res.statusCode).toBe(200);
 		expect(isDeepStrictEqual(body.payload, {})).toBe(true);
 
@@ -538,11 +526,9 @@ describe('endpoints', () => {
 		res = await http.get('http://localhost:3002/any');
 		expect(res.statusCode).toBe(404);
 		await stopApplication(app);
-
-		done();
 	});
 
-	it('should throw Circular dependency error', async (done) => {
+	it('should throw Circular dependency error', async () => {
 		try {
 			@Injectable()
 			class ParentService {
@@ -554,11 +540,10 @@ describe('endpoints', () => {
 			});
 		} catch (err) {
 			expect(err.message).toBeDefined();
-			done();
 		}
 	});
 
-	it('should throw bad path error', async (done) => {
+	it('should throw bad path error', async () => {
 		try {
 			@Controller()
 			class IndexController {
@@ -573,7 +558,6 @@ describe('endpoints', () => {
 			});
 		} catch (err) {
 			expect(err.message.startsWith('Bad path')).toBe(true);
-			done();
 		}
 	});
 });

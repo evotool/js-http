@@ -1,18 +1,17 @@
 import { HttpClient } from '@evojs/http-client';
 
 import { Controller, Endpoint } from '../src';
-import { createApplication, startApplication, stopApplication } from './files/test-utils';
+import { createApplication, startApplication, stopApplication } from './utils';
 
 const http = new HttpClient({ debug() {} });
 
 describe('application', () => {
-	it('should create application with default options', async (done) => {
+	it('should create application with default options', async () => {
 		const app = await createApplication();
 		expect(app.address).toBeNull();
-		done();
 	});
 
-	it('should create application', async (done) => {
+	it('should create application', async () => {
 		const app = await createApplication({
 			controllers: [],
 			providers: [],
@@ -32,17 +31,15 @@ describe('application', () => {
 			responseHandler: (res, err, body) => {},
 		});
 		expect(app.address).toBeNull();
-		done();
 	});
 
-	it('should start server', async (done) => {
+	it('should start server', async () => {
 		const app = await createApplication({ controllers: [] });
 		await startApplication(app, 3001);
 		await stopApplication(app);
-		done();
 	});
 
-	it('should check middlewares', async (done) => {
+	it('should check middlewares', async () => {
 		const app = await createApplication({
 			controllers: [],
 			middlewares: [
@@ -58,10 +55,9 @@ describe('application', () => {
 		await startApplication(app, 3001);
 		await http.get('http://localhost:3001/').then((res) => res.body());
 		await stopApplication(app);
-		done();
 	});
 
-	it('should check endpoint middlewares', async (done) => {
+	it('should check endpoint middlewares', async () => {
 		@Controller()
 		class IndexController {
 			@Endpoint({
@@ -83,10 +79,9 @@ describe('application', () => {
 		await startApplication(app, 3001);
 		await http.get('http://localhost:3001/index').then((res) => res.body());
 		await stopApplication(app);
-		done();
 	});
 
-	it('shoud return 400 exception due to bad query', async (done) => {
+	it('shoud return 400 exception due to bad query', async () => {
 		@Controller()
 		class IndexController {
 			@Endpoint({
@@ -105,11 +100,9 @@ describe('application', () => {
 		expect(body.statusCode).toBe(400);
 
 		await stopApplication(app);
-
-		done();
 	});
 
-	it('shoud return 400 exception due to bad body', async (done) => {
+	it('shoud return 400 exception due to bad body', async () => {
 		@Controller()
 		class IndexController {
 			@Endpoint({
@@ -129,7 +122,5 @@ describe('application', () => {
 		expect(body.statusCode).toBe(400);
 
 		await stopApplication(app);
-
-		done();
 	});
 });

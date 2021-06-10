@@ -1,6 +1,6 @@
-import type { IncomingMessage, ServerResponse } from 'http';
+import { IncomingMessage, ServerResponse } from 'http';
 
-import { Controller, Endpoint, Req, RequestData, Res } from '../../src';
+import { Controller, Endpoint, RequestData } from '../../src';
 import { ImportedService } from './service';
 
 @Controller({
@@ -9,7 +9,7 @@ import { ImportedService } from './service';
 	useMethodNames: true,
 })
 export class ImportedController {
-	constructor(@Req readonly req: IncomingMessage, @Res readonly res: ServerResponse, readonly hello: ImportedService) {}
+	constructor(readonly req: IncomingMessage, readonly res: ServerResponse, readonly hello: ImportedService) {}
 
 	@Endpoint({
 		method: 'POST',

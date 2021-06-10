@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '../../src';
+import { Inject, Injectable, Optional } from '../../src';
 
 export const HELLO_PREFIX_TOKEN = 'HELLO_PREFIX';
 export const HELLO_WELCOME_TOKEN = 'HELLO_WELCOME';
@@ -6,7 +6,7 @@ export const HELLO_WELCOME_TOKEN = 'HELLO_WELCOME';
 @Injectable()
 export class ImportedService {
 	constructor(
-		@Inject(HELLO_PREFIX_TOKEN, { optional: true, default: 'Mr.' }) readonly prefix: string,
+		@Inject(HELLO_PREFIX_TOKEN) @Optional() readonly prefix: string = 'Mr.',
 		@Inject(HELLO_WELCOME_TOKEN) readonly welcome: string,
 	) {}
 

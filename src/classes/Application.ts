@@ -1,258 +1,80 @@
 import { validate } from '@evojs/validator/validate';
-import { IncomingMessage, Server, ServerOptions, ServerResponse, createServer } from 'http';
-import * as qs from 'querystring';
+import { IncomingMessage, Server, ServerResponse, createServer } from 'http';
+import * as querystring from 'querystring';
 
-import { BuiltInject, DepInjectOptions, ProviderConstructor, TokenType } from '..';
-import type { ControllerConstructor, MiddlewareType } from '../decorators/Controller';
-import type { BuiltEndpoint, HttpMethod, Params } from '../decorators/Endpoint';
-import { ApplicationBodyOptions, Parsers, parseBody } from '../utils/parse-body';
-import { parseCookie } from '../utils/parse-cookie';
-import { CONTROLLER_ENDPOINTS_TOKEN, INJECTABLE_OPTIONS_TOKEN, REQUEST_TOKEN, RESPONSE_TOKEN } from '../utils/tokens';
-import { HttpException } from './HttpException';
+import { parseBody } from '../utils/parsers';
+import {
+	findControllerData,
+	findInjectableData,
+	hasControllerData,
+	hasInjectableData,
+	removeControllerData,
+	removeInjectableData,
+} from '../utils/reflect';
+import {
+	Address,
+	ApplicationBodyOptions,
+	ApplicationData,
+	ApplicationHooks,
+	ApplicationOptions,
+	ClassProviderData,
+	Constructor,
+	ControllerData,
+	ControllerDataMap,
+	EndpointData,
+	FactoryProviderData,
+	ImportOrRequireFn,
+	InjectData,
+	Middleware,
+	Params,
+	Parsers,
+	Provider,
+	ProviderData,
+	ResponseHandler,
+	Scope,
+	ValueProviderData,
+} from '../utils/types';
+import {
+	BadRequestException,
+	HttpException,
+	INTERNAL_HTTP_EXCEPTIONS,
+	InternalServerErrorException,
+	NotFoundException,
+} from './HttpException';
 
 export class Application {
-	protected static async _loadControllers(controllers: (ControllerConstructor | AsyncImportFn)[]): Promise<ControllerConstructor[]> {
-		controllers = Array.from(controllers);
+	private _address: Readonly<{ host: string; port: number }> | null = null;
+	private readonly _server: Server;
+	private readonly _hooks: ApplicationHooks;
+	private readonly _parsers: Parsers;
+	private readonly _bodyOptions: ApplicationBodyOptions;
+	private readonly _middlewares: Middleware[];
+	private readonly _providers: ProviderData[];
+	private readonly _endpoints: EndpointData[];
+	private readonly _controllers: ControllerDataMap;
+	private readonly _singletons: Map<any, any> = new Map<any, any>();
 
-		for (let i = 0, a = controllers, l = a.length, x = a[i]; i < l; x = a[++i]) {
-			if (!Reflect.hasMetadata(CONTROLLER_ENDPOINTS_TOKEN, x)) {
-				const imports = await (x as AsyncImportFn)();
-				const controllersFromImport = Object.values(imports)
-					.filter((c) => typeof c === 'function' && Reflect.hasMetadata(CONTROLLER_ENDPOINTS_TOKEN, c)) as ControllerConstructor[];
-				a.splice(i, 1, ...controllersFromImport);
-				l = a.length;
-			}
-		}
-
-		// Check duplicates
-		for (let i = 0, a = controllers, l = a.length, x = a[i]; i < l; x = a[++i]) {
-			if (a.indexOf(x) !== i) {
-				throw new Error('Controller was provided more than one times');
-			}
-		}
-
-		return controllers as ControllerConstructor[];
+	get address(): Readonly<{ host: string; port: number }> | null {
+		return this._address;
 	}
 
-	protected static async _loadProviders(providers: (Provider | AsyncImportFn)[]): Promise<BuiltProvider[]> {
-		providers = Array.from(providers);
+	private constructor(data: ApplicationData) {
+		this._bodyOptions = data.bodyOptions;
+		this._bodyOptions.json ||= {};
+		this._bodyOptions.multipart ||= {};
+		this._bodyOptions.none ||= {};
+		this._bodyOptions.raw ||= {};
+		this._bodyOptions.text ||= {};
+		this._bodyOptions.urlencoded ||= {};
+		this._providers = data.providers;
+		this._controllers = data.controllers;
+		this._endpoints = data.endpoints;
+		this._hooks = data.hooks;
+		this._middlewares = data.middlewares;
+		this._parsers = data.parsers;
 
-		// Load provider from imports
-		for (let i = 0, a = providers, l = a.length, x = a[i]; i < l; x = a[++i]) {
-			if (!Reflect.hasMetadata(INJECTABLE_OPTIONS_TOKEN, x) && typeof x !== 'object') {
-				const imports = await (x as AsyncImportFn)();
-				const providersFromImport = Object.values(imports)
-					.filter((c) => typeof c === 'function' && Reflect.hasMetadata(INJECTABLE_OPTIONS_TOKEN, c) && !Reflect.hasMetadata(CONTROLLER_ENDPOINTS_TOKEN, c)) as Provider[];
-				a.splice(i, 1, ...providersFromImport);
-				l = a.length;
-			}
-		}
-
-		// Check duplicates
-		for (let i = 0, a = providers, l = a.length, x = a[i]; i < l; x = a[++i]) {
-			if (a.indexOf(x) !== i) {
-				throw new Error('Provider was provided more than one times');
-			}
-		}
-
-		return this._buildProviders(providers as Provider[]);
-	}
-
-	protected static _buildProviders(providers: Provider[]): BuiltProvider[] {
-		const builtProviders: BuiltProvider[] = [];
-
-		for (const provider of providers as Provider[]) {
-			if (typeof provider === 'function') {
-				const deps = Reflect.getMetadata(INJECTABLE_OPTIONS_TOKEN, provider) as BuiltInject[];
-
-				if (!deps) {
-					throw new Error(`"Injectable" decorator do not provided to class "${provider.name}"`);
-				}
-
-				builtProviders.push({ provide: provider, useClass: provider, deps });
-				Reflect.deleteMetadata(INJECTABLE_OPTIONS_TOKEN, provider);
-			} else if ('useClass' in provider) {
-				const deps = provider.deps?.map((dep) => typeof dep === 'object'
-					? { ...dep, optional: dep.optional ?? false }
-					: { provide: dep, optional: false }) || [];
-
-				builtProviders.push({ ...provider, deps });
-			} else if ('useFactory' in provider) {
-				const deps = provider.deps?.map((dep) => typeof dep === 'object'
-					? { ...dep, optional: dep.optional ?? false }
-					: { provide: dep, optional: false }) || [];
-				builtProviders.push({ ...provider, deps });
-			} else {
-				builtProviders.push({ ...provider });
-			}
-		}
-
-		// remove duplicates
-		for (let i = 0, a = builtProviders, p = a[i], l = a.length, checked = new Map<TokenType, number>(); i < l; p = a[++i]) {
-			const index = checked.get(p.provide);
-			checked.set(p.provide, i);
-
-			if (typeof index === 'number') {
-				builtProviders.splice(index, 1);
-				i--;
-				l = a.length;
-			}
-		}
-
-		// check for circular dependency
-		function checkCircularDependency(deps: BuiltInject[], parents: TokenType[] = []): void {
-			for (const d of deps) {
-				const p = builtProviders.find((x) => x.provide === d.provide)!;
-
-				if (!p || !('deps' in p)) {
-					continue;
-				}
-
-				if (parents.includes(p.provide)) {
-					throw new Error(`Circular dependency: ${parents.map((p) => typeof p === 'function' ? p.name : `'${p}'`).join(' -> ')}`);
-				}
-
-				parents.push(p.provide);
-
-				checkCircularDependency(p.deps, parents);
-			}
-		}
-
-		for (const p of builtProviders) {
-			if (!('deps' in p)) {
-				continue;
-			}
-
-			checkCircularDependency(p.deps);
-		}
-
-		return builtProviders;
-	}
-
-	protected static _loadEndpoints(controllers: ControllerConstructor[]): BuiltEndpoint[] {
-		const endpoints: BuiltEndpoint[] = controllers
-			.filter((c) => typeof c === 'function' && Reflect.hasMetadata(CONTROLLER_ENDPOINTS_TOKEN, c))
-			.map((c) => {
-				const endpoints = Reflect.getMetadata(CONTROLLER_ENDPOINTS_TOKEN, c) as BuiltEndpoint[];
-				Reflect.deleteMetadata(CONTROLLER_ENDPOINTS_TOKEN, c);
-
-				return endpoints;
-			})
-			.flat();
-
-		// Check endpoints for same location
-		const methodPaths = endpoints.map((ep) => `${ep.method} ${ep.path}`);
-
-		for (let i = 0, a = methodPaths, x = a[i], l = a.length; i < l; x = a[++i]) {
-			if (a.indexOf(x) !== i) {
-				throw new Error(`Some endpoints have the same location: "${x}"`);
-			}
-		}
-
-		return endpoints;
-	}
-
-	protected static _collectBuiltInjects(controllers: ControllerConstructor[]): Map<ControllerConstructor, BuiltInject[]> {
-		const injects = new Map<ControllerConstructor, BuiltInject[]>();
-
-		for (const c of controllers) {
-			const bi = Reflect.getMetadata(INJECTABLE_OPTIONS_TOKEN, c) as BuiltInject[];
-			injects.set(c, bi);
-			Reflect.deleteMetadata(INJECTABLE_OPTIONS_TOKEN, c);
-		}
-
-		return injects;
-	}
-
-	static async create(options: ApplicationOptions = {}): Promise<Application> {
-		let {
-			bodyOptions,
-			controllers,
-			hooks,
-			middlewares,
-			parsers,
-			providers,
-			responseHandler,
-		} = options;
-		const builtOptions = {} as BuiltApplicationOptions;
-
-		hooks = hooks ? { ...hooks } : {};
-
-		// Load controllers
-		controllers = await this._loadControllers(controllers || []);
-
-		if (hooks.controllersLoad) {
-			await hooks.controllersLoad(controllers as ControllerConstructor[]);
-		}
-
-		// collect builtInjects
-		builtOptions.builtInjects = this._collectBuiltInjects(controllers as ControllerConstructor[]);
-
-		// Load providers
-		builtOptions.providers = await this._loadProviders(providers || []);
-
-		if (hooks.providersLoad) {
-			await hooks.providersLoad(providers as BuiltProvider[]);
-		}
-
-		// Load endpoints
-		builtOptions.endpoints = this._loadEndpoints(controllers as ControllerConstructor[]);
-
-		if (hooks.endpointsLoad) {
-			await hooks.endpointsLoad(builtOptions.endpoints);
-		}
-
-		// Reset parsers
-		parsers = parsers ? { ...parsers } : {};
-
-		if (!parsers.json) {
-			parsers.json = JSON;
-		}
-
-		if (!parsers.urlencoded) {
-			parsers.urlencoded = qs;
-			parsers.urlencoded.queryMode = true;
-		}
-
-		builtOptions.parsers = parsers as Parsers;
-
-		builtOptions.hooks = hooks;
-		builtOptions.bodyOptions = bodyOptions ? { ...bodyOptions } : {};
-		builtOptions.middlewares = middlewares || [];
-		builtOptions.responseHandler = responseHandler;
-
-		return new Application(builtOptions);
-	}
-
-	protected readonly _server: Server;
-	protected readonly _hooks: ApplicationHooks;
-	protected readonly _parsers: Parsers;
-	protected readonly _bodyOptions: ApplicationBodyOptions;
-	protected readonly _middlewares: MiddlewareType[];
-	protected readonly _providers: BuiltProvider[];
-	protected readonly _endpoints: BuiltEndpoint[];
-	protected readonly _builtInjects = new Map<ControllerConstructor, BuiltInject[]>();
-
-	readonly address: Readonly<{ host: string; port: number }> | null = null;
-
-	protected constructor(options: BuiltApplicationOptions) {
-		this._bodyOptions = options.bodyOptions;
-		this._bodyOptions.json ??= {};
-		this._bodyOptions.multipart ??= {};
-		this._bodyOptions.none ??= {};
-		this._bodyOptions.raw ??= {};
-		this._bodyOptions.stream ??= {};
-		this._bodyOptions.text ??= {};
-		this._bodyOptions.urlencoded ??= {};
-		this._providers = options.providers;
-		this._builtInjects = options.builtInjects;
-		this._endpoints = options.endpoints;
-		this._hooks = options.hooks;
-		this._middlewares = options.middlewares;
-		this._parsers = options.parsers;
-
-		if (options.responseHandler) {
-			this._responseHandler = options.responseHandler;
+		if (data.responseHandler) {
+			this._responseHandler = data.responseHandler;
 		}
 
 		this._server = createServer(this._requestHandler.bind(this));
@@ -260,13 +82,17 @@ export class Application {
 
 	listen(port: number): Promise<this>;
 	listen(port: number, host: string): Promise<this>;
-	async listen(port: number, host?: string): Promise<this> {
+	async listen(port: number, host: string = 'localhost'): Promise<this> {
 		return new Promise((resolve, reject) => {
-			this._server.on('error', reject).listen(port, host, () => {
-				Object.defineProperty(this, 'address', { value: { host: host || 'localhost', port }, writable: false });
-				this._server.off('error', reject);
-				resolve(this);
-			});
+			this._server
+				.on('error', reject)
+				.listen(port, host, () => {
+					this._address = { host, port } as Address;
+					Object.defineProperty(this._address, 'host', { value: host, writable: false });
+					Object.defineProperty(this._address, 'port', { value: port, writable: false });
+					this._server.off('error', reject);
+					resolve(this);
+				});
 		});
 	}
 
@@ -277,57 +103,82 @@ export class Application {
 					return reject(err);
 				}
 
-				Object.defineProperty(this, 'address', { value: null, writable: false });
+				this._address = null;
 
 				resolve(this);
 			});
 		});
 	}
 
-	protected _resolveArgs(providers: BuiltProvider[], target: TokenType, deps: BuiltInject[]): any[] {
-		return deps.map((dep, i) => {
-			const provider = providers.find((p) => p.provide === dep.provide);
+	private _resolveArgs(providers: ProviderData[], injects: InjectData[] = [], name: string): any[] {
+		const args = injects.map((inject, index) => {
+			const provider = providers.find((p) => p.provide === inject.token);
 
 			if (!provider) {
-				if (dep.optional) {
-					return dep.default;
-				}
-
-				throw new Error(`Provider of param #${i} not found for "${typeof target === 'function' ? target.name : target}"`);
+				return;
 			}
+
+			if (this._singletons.has(provider.provide)) {
+				return this._singletons.get(provider.provide);
+			}
+
+			let arg: any;
 
 			if ('useClass' in provider) {
-				const args = this._resolveArgs(providers, provider.useClass, provider.deps);
-
-				return new provider.useClass(...args);
+				const args = this._resolveArgs(providers, provider.injects, provider.useClass.name || provider.provide?.name);
+				arg = new provider.useClass(...args);
+			} else if ('useFactory' in provider) {
+				const args = this._resolveArgs(providers, provider.injects, provider.provide);
+				arg = provider.useFactory.call(null, ...args);
+			} else {
+				arg = provider.useValue;
 			}
 
-			if ('useFactory' in provider) {
-				const args = this._resolveArgs(providers, provider.provide, provider.deps);
-
-				return provider.useFactory.call(null, ...args);
+			if (provider.scope === Scope.DEFAULT) {
+				this._singletons.set(provider.provide, arg);
 			}
 
-			return provider.useValue;
+			return arg;
 		});
+
+		return args;
 	}
 
-	protected _buildControllerInstance(constructor: ControllerConstructor, dynamicProviders: BuiltValueProvider[] = []): { [key: string]: any } {
-		const deps = this._builtInjects.get(constructor)!;
-		const args = this._resolveArgs((dynamicProviders as BuiltProvider[]).concat(this._providers), constructor, deps);
+	private _buildControllerInstance(constructor: Constructor, requestProviders: ValueProviderData[] = []): any {
+		if (this._singletons.has(constructor)) {
+			return this._singletons.get(constructor);
+		}
 
-		return new constructor(...args);
+		const controller = this._controllers.get(constructor)!;
+		const args = this._resolveArgs((requestProviders as ProviderData[]).concat(this._providers), controller.injects, constructor.name);
+		const instance = new constructor(...args);
+
+		if (controller.scope === Scope.DEFAULT) {
+			this._singletons.set(constructor, instance);
+		}
+
+		return instance;
 	}
 
-	protected async _resolveMiddlewares(req: IncomingMessage, res: ServerResponse, middlewares: MiddlewareType[]): Promise<boolean> {
-		for (const m of middlewares) {
-			let response = m(req, res);
+	private async _resolveMiddlewares(req: IncomingMessage, res: ServerResponse, middlewares: Middleware[]): Promise<boolean> {
+		for (const middleware of middlewares) {
+			let response = middleware(req, res);
 
 			if (response instanceof Promise) {
 				response = await response;
 			}
 
 			if (response) {
+				if (this._hooks.middlewareExceptions) {
+					const value = this._hooks.middlewareExceptions(middleware, response);
+
+					if (value instanceof Promise) {
+						value.catch((err) => {
+							throw err;
+						});
+					}
+				}
+
 				return true;
 			}
 		}
@@ -335,7 +186,7 @@ export class Application {
 		return false;
 	}
 
-	protected _requestHandler(req: IncomingMessage, res: ServerResponse): void {
+	private _requestHandler(req: IncomingMessage, res: ServerResponse): void {
 		Promise.resolve(this._responseHandler)
 			.then(async (responseHandler) => {
 				// Resolve global Middlewares
@@ -343,16 +194,20 @@ export class Application {
 					return;
 				}
 
-				// Parse location and querystring
-				const [location, querystring] = (req.url || '').split('?', 2) as [string, string?];
+				// Parse location and queryString
+				const [location, queryString] = (req.url || '').split('?', 2) as [string, string?];
 
 				// Find endpoint and resolve params
-				let params: Params = {};
+				const params: Params = {};
 				const endpoint = this._endpoints.find((ep) => {
 					const match = ep.pathRegex.exec(location) as string[];
 
 					if (match && (req.method === ep.method || (req.method === 'HEAD' && ep.method === 'GET'))) {
-						params = Object.fromEntries(Array.from(match).slice(1).map((p, i) => [ep.paramOrder[i], decodeURIComponent(p)]));
+						const matchedParams = Array.from(match).slice(1);
+
+						for (let i = 0, l = matchedParams.length; i < l; i++) {
+							params[ep.paramOrder[i]] = decodeURIComponent(matchedParams[i]);
+						}
 
 						return true;
 					}
@@ -361,11 +216,11 @@ export class Application {
 				});
 
 				if (!endpoint) {
-					throw new HttpException(404, void 0, new Error('Not found'));
+					throw new NotFoundException(INTERNAL_HTTP_EXCEPTIONS.ENDPOINT_NOT_FOUND);
 				}
 
 				// Resolve endpoint Middlewares
-				if (await this._resolveMiddlewares(req, res, endpoint.middleware as MiddlewareType[])) {
+				if (await this._resolveMiddlewares(req, res, endpoint.middleware as Middleware[])) {
 					return;
 				}
 
@@ -382,19 +237,19 @@ export class Application {
 				let query: { [key: string]: any };
 
 				try {
-					query = parsers.urlencoded!.parse(querystring || '');
+					query = parsers.urlencoded!.parse(queryString || '');
 
 					if (endpoint.queryRule) {
 						query = validate(query, endpoint.queryRule, 'query', parsers.urlencoded!.queryMode);
 					}
 				} catch (err) {
-					throw new HttpException(400, void 0, err);
+					throw new BadRequestException(void 0, err);
 				}
 
 				// Parse body
 				let body: any = await parseBody(req, endpoint.bodyType, parsers as Parsers, { ...this._bodyOptions[endpoint.bodyType], ...endpoint.bodyOptions });
 
-				if (body !== void 0 && endpoint.bodyType !== 'stream') {
+				if (body !== void 0) {
 					try {
 						const isQuery = endpoint.bodyType === 'multipart' || (endpoint.bodyType === 'urlencoded' && parsers.urlencoded!.queryMode);
 
@@ -402,21 +257,18 @@ export class Application {
 							body = validate(body, endpoint.bodyRule, 'body', isQuery);
 						}
 					} catch (err) {
-						throw new HttpException(400, void 0, err);
+						throw new BadRequestException(void 0, err);
 					}
 				}
 
-				// Parse cookie
-				const cookies = parseCookie(req);
-
 				// Build controller
 				const controller = this._buildControllerInstance(endpoint.controller, [
-					{ provide: REQUEST_TOKEN, useValue: req },
-					{ provide: RESPONSE_TOKEN, useValue: res },
+					{ provide: IncomingMessage, useValue: req, scope: Scope.REQUEST },
+					{ provide: ServerResponse, useValue: res, scope: Scope.REQUEST },
 				]);
 
 				// Getting response body
-				let responseBody = endpoint.handler.call(controller, { method: req.method as HttpMethod, auth, body, query, params, headers: req.headers, cookies });
+				let responseBody = endpoint.handler.call(controller, { auth, params, query, body, req, res });
 
 				if (responseBody instanceof Promise) {
 					responseBody = await responseBody;
@@ -428,7 +280,7 @@ export class Application {
 			.catch((err) => this._responseHandler(res, err, void 0));
 	}
 
-	protected readonly _responseHandler: ResponseHandler = (res: ServerResponse, err: Error | null, payload: any) => {
+	private readonly _responseHandler: ResponseHandler = (res: ServerResponse, err: Error | null, payload: any) => {
 		interface ResponseBody {
 			statusCode: number;
 			message: string;
@@ -445,7 +297,7 @@ export class Application {
 			if (err instanceof HttpException) {
 				exception = err;
 			} else {
-				exception = new HttpException(500, undefined, err);
+				exception = new InternalServerErrorException(INTERNAL_HTTP_EXCEPTIONS.INTERNAL_SERVER_ERROR, err);
 			}
 
 			body.statusCode = exception.statusCode;
@@ -476,109 +328,229 @@ export class Application {
 			'Content-Length': `${data.byteLength}`,
 		}).end(data);
 	};
-}
 
-export type ResponseHandler = (res: ServerResponse, err: Error | null, body: any) => void | PromiseLike<void>;
+	private static async _loadControllers(controllers: (Constructor | ImportOrRequireFn)[], providers: ProviderData[]): Promise<ControllerDataMap> {
+		controllers = Array.from(controllers);
 
-export interface ApplicationOptions extends ServerOptions {
+		for (let i = 0, a = controllers, l = a.length, x = a[i]; i < l; x = a[++i]) {
+			if (!hasControllerData(x as Constructor)) {
+				const imports = await (x as ImportOrRequireFn)();
+				const controllersFromImport = Object.values(imports)
+					.filter((c) => typeof c === 'function' && hasControllerData(c as Constructor)) as Constructor[];
+				a.splice(i, 1, ...controllersFromImport);
+				l = a.length;
+			}
+		}
 
-	/**
-	 * Body options for any body types
-	 * @default {}
-	 */
-	bodyOptions?: ApplicationBodyOptions;
+		// Check duplicates
+		for (let i = 0, a = controllers, l = a.length, x = a[i]; i < l; x = a[++i]) {
+			if (a.indexOf(x) !== i) {
+				throw new Error('Controller was provided more than one times');
+			}
+		}
 
-	/**
-	 * Array of controller types or controller paths
-	 * @default []
-	 */
-	controllers?: (ControllerConstructor | AsyncImportFn)[];
+		const controllersMap = new Map<Constructor, ControllerData>();
 
-	/**
-	 * @default {}
-	 */
-	hooks?: ApplicationHooks;
+		for (const c of controllers as Constructor[]) {
+			const controller = findControllerData(c)!;
+			controllersMap.set(c, controller);
+			this._preloadInjectables(providers, controller, c.name);
+			removeControllerData(c);
+		}
 
-	/**
-	 * @default []
-	 */
-	middlewares?: MiddlewareType[];
+		return controllersMap;
+	}
 
-	/**
-	 * @default Parsers
-	 */
-	parsers?: Partial<Parsers>;
+	private static _preloadInjectables(providers: ProviderData[], injectable: { scope: Scope; injects?: InjectData[] }, name: string): void {
+		if (!injectable.injects) {
+			return;
+		}
 
-	/**
-	 * @default []
-	 */
-	providers?: (Provider | AsyncImportFn)[];
-	responseHandler?: ResponseHandler;
-}
+		for (let index = 0, a = injectable.injects, inject = a[index]; index < a.length; inject = a[++index]) {
+			const provider = providers.find((p) => p.provide === inject.token);
 
-export interface ValueProviderOptions {
-	provide: TokenType;
-	useValue: any;
-}
+			if (!provider) {
+				if (inject.optional) {
+					continue;
+				}
 
-export interface ClassProviderOptions {
-	provide: TokenType;
-	useClass: ProviderConstructor;
-	deps?: (TokenType | DepInjectOptions)[];
-}
+				if (inject.token === IncomingMessage || inject.token === ServerResponse) {
+					injectable.scope = Scope.REQUEST;
 
-export interface FactoryProviderOptions {
-	provide: TokenType;
-	useFactory(...args: any[]): any;
-	deps?: (TokenType | DepInjectOptions)[];
-}
+					continue;
+				}
 
-export type ProviderOptions =
-| ValueProviderOptions
-| ClassProviderOptions
-| FactoryProviderOptions;
+				throw new Error(`Provider of param #${index} not found for "${name}"`);
+			}
 
-export type Provider =
-| ProviderConstructor
-| ProviderOptions;
+			this._preloadInjectables(providers, provider, (provider as ClassProviderData).useClass?.name || provider.provide);
 
-export type AsyncImportFn =  () => any | Promise<any>;
+			if (provider.scope === Scope.REQUEST) {
+				injectable.scope = Scope.REQUEST;
+			}
+		}
+	}
 
-interface BuiltValueProvider {
-	provide: TokenType;
-	useValue: any;
-}
+	private static async _loadProviders(providers: (Provider | ImportOrRequireFn)[]): Promise<ProviderData[]> {
+		providers = Array.from(providers);
 
-interface BuiltClassProvider {
-	provide: TokenType;
-	useClass: ProviderConstructor;
-	deps: BuiltInject[];
-}
+		// Load provider from imports
+		for (let i = 0, a = providers, l = a.length, x = a[i]; i < l; x = a[++i]) {
+			if (typeof x === 'function') {
+				if (hasInjectableData(x as Constructor)) {
+					continue;
+				}
 
-interface BuiltFactoryProvider {
-	provide: TokenType;
-	useFactory(...args: any[]): any;
-	deps: BuiltInject[];
-}
+				const imports = await (x as ImportOrRequireFn)();
+				const providersFromImport = Object.values(imports)
+					.filter((c) => typeof c === 'function' && hasInjectableData(c as Constructor)) as Provider[];
+				a.splice(i, 1, ...providersFromImport);
+				l = a.length;
+			} else if (typeof x !== 'object') {
+				throw new Error('Unknown provider');
+			}
+		}
 
-type BuiltProvider =
-| BuiltValueProvider
-| BuiltClassProvider
-| BuiltFactoryProvider;
+		// Check duplicates
+		for (let i = 0, a = providers, l = a.length, x = a[i]; i < l; x = a[++i]) {
+			if (a.indexOf(x) !== i) {
+				throw new Error('Provider was provided more than one times');
+			}
+		}
 
-interface ApplicationHooks {
-	controllersLoad?(controllers: ControllerConstructor[]): void | PromiseLike<void>;
-	providersLoad?(providers: BuiltProvider[]): void | PromiseLike<void>;
-	endpointsLoad?(endpoints: BuiltEndpoint[]): void | PromiseLike<void>;
-}
+		return this._buildProviders(providers as Provider[]);
+	}
 
-interface BuiltApplicationOptions {
-	bodyOptions: ApplicationBodyOptions;
-	builtInjects: Map<ControllerConstructor, BuiltInject[]>;
-	endpoints: BuiltEndpoint[];
-	hooks: ApplicationHooks;
-	middlewares: MiddlewareType[];
-	parsers: Parsers;
-	providers: BuiltProvider[];
-	responseHandler?: ResponseHandler;
+	private static _buildProviders(providers: Provider[]): ProviderData[] {
+		const builtProviders: ProviderData[] = [];
+
+		for (const p of providers as Provider[]) {
+			if (typeof p === 'function') {
+				const injectable = findInjectableData(p)!;
+
+				if (!injectable) {
+					throw new Error(`"Injectable" decorator did not provide to class "${p.name}"`);
+				}
+
+				builtProviders.push({
+					provide: p,
+					useClass: p,
+					injects: injectable.injects,
+					scope: injectable.scope,
+				});
+
+				removeInjectableData(p);
+
+				continue;
+			}
+
+			const pd: ProviderData = { scope: Scope.DEFAULT, ...p } as ProviderData;
+
+			if ('deps' in p) {
+				(pd as ClassProviderData | FactoryProviderData).injects = (p.deps!.map((token) => ({ token })) || []) as InjectData[];
+			}
+
+			builtProviders.push(pd);
+		}
+
+		// remove duplicates
+		for (let i = 0, a = builtProviders, p = a[i], l = a.length, checked = new Map<any, number>(); i < l; p = a[++i]) {
+			const index = checked.get(p.provide);
+			checked.set(p.provide, i);
+
+			if (typeof index === 'number') {
+				builtProviders.splice(index, 1);
+				i--;
+				l = a.length;
+			}
+		}
+
+		// check circular dependency
+		function _checkCircularDependency(providers: Provider[], injects: InjectData[], parentTokens: any[] = []): void {
+			for (const i of injects) {
+				const p = providers.find((x) => x.provide === i.token);
+
+				if (!p || !('injects' in p)) {
+					continue;
+				}
+
+				if (parentTokens.includes(p.provide)) {
+					throw new Error(`Circular dependency detected: ${parentTokens.map((p) => typeof p === 'function' ? p.name : `'${p}'`).join(' -> ')}`);
+				}
+
+				parentTokens.push(p.provide);
+
+				_checkCircularDependency(providers, p.injects, parentTokens);
+			}
+		}
+
+		for (const p of builtProviders) {
+			if (!('injects' in p)) {
+				continue;
+			}
+
+			_checkCircularDependency(providers, p.injects);
+		}
+
+		return builtProviders;
+	}
+
+	private static _loadEndpoints(controllerDataMap: ControllerDataMap): EndpointData[] {
+		const endpoints: EndpointData[] = Array.from(controllerDataMap.values())
+			.map((c) => c.endpoints)
+			.reduce((p, n) => p.concat(n), []);
+
+		// Check endpoints for same location
+		const methodPaths = endpoints.map((ep) => `${ep.method} ${ep.path}`);
+
+		for (let i = 0, a = methodPaths, x = a[i], l = a.length; i < l; x = a[++i]) {
+			if (a.indexOf(x) !== i) {
+				throw new Error(`Some endpoints have the same location: "${x}"`);
+			}
+		}
+
+		return endpoints;
+	}
+
+	static async create(options: ApplicationOptions = {}): Promise<Application> {
+		let { bodyOptions = {}, controllers = [], hooks = {}, middlewares = [], parsers = {}, providers = [], responseHandler } = options;
+
+		const data = {} as ApplicationData;
+
+		hooks = { ...hooks };
+
+		// Load providers
+		data.providers = await this._loadProviders(providers);
+
+		await hooks.providersLoad?.(data.providers);
+
+		// Load controllers
+		data.controllers = await this._loadControllers(controllers, data.providers);
+
+		await hooks.controllersLoad?.(data.controllers);
+
+		// Load endpoints
+		data.endpoints = this._loadEndpoints(data.controllers);
+
+		await hooks.endpointsLoad?.(data.endpoints);
+
+		// Reset parsers
+		parsers = { ...parsers };
+
+		parsers.json ||= JSON;
+
+		if (!parsers.urlencoded) {
+			parsers.urlencoded = querystring;
+			parsers.urlencoded.queryMode = true;
+		}
+
+		data.parsers = parsers as Parsers;
+
+		data.hooks = hooks;
+		data.bodyOptions = { ...bodyOptions };
+		data.middlewares = middlewares;
+		data.responseHandler = responseHandler;
+
+		return new Application(data);
+	}
 }

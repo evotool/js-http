@@ -1,79 +1,50 @@
-import type { IncomingMessage, ServerResponse } from 'http';
 
-import type { ResponseHandler } from '../classes/Application';
-import { parseName } from '../utils/change-case';
-import { getEndpoints } from '../utils/get-endpoints';
-import { parsePath } from '../utils/parse-path';
-import type { AuthHandler, ParamSchema } from './Endpoint';
-import { BuiltInjectable, Injectable, InjectableOptions } from './Injectable';
+import { parseName, parsePath } from '../utils/parsers';
+import { findOrCreateControllerData, setInjects } from '../utils/reflect';
+import { ControllerData, ControllerDecorator, ControllerOptions, Middleware } from '../utils/types';
 
 export function Controller(options: ControllerOptions = {}): ControllerDecorator {
 	return (constructor) => {
-		options = { ...options };
+		const controller = Object.assign(findOrCreateControllerData(constructor), options) as ControllerData;
 
-		options.useMethodNames ??= false;
-		options.path ??= parseName(constructor.name, 'Controller');
-		options.param ??= {};
-		options.authHandler ||= void 0;
-		options.middleware = [options.middleware].flat().filter(Boolean) as MiddlewareType[];
-		options.responseHandler ||= void 0;
+		controller.useMethodNames ??= false;
+		controller.path ??= parseName(constructor.name, 'Controller');
+		controller.param ??= {};
+		controller.authHandler ||= void 0;
+		controller.middleware = (Array.isArray(controller.middleware) ? controller.middleware : [controller.middleware]).filter(Boolean) as Middleware[];
+		controller.responseHandler ||= void 0;
 
-		const endpoints = getEndpoints(constructor);
-
-		for (const endpoint of endpoints) {
+		for (const e of controller.endpoints) {
 			// set controller constructor
-			endpoint.controller = constructor;
+			e.controller = constructor;
 
 			// set default path
-			endpoint.path ??= '';
+			e.path ??= '';
 
 			// set default param
-			endpoint.param = { ...options.param, ...endpoint.param || {} };
+			e.param = { ...controller.param, ...e.param || {} };
 
 			// set default endpoint method
-			endpoint.method ??= 'GET';
+			e.method ??= 'GET';
 
 			// set default endpoint bodyType
-			endpoint.bodyType ??= endpoint.bodyRule === void 0 ? 'none' : 'json';
+			e.bodyType ??= e.bodyRule === void 0 ? 'none' : 'json';
 
 			// set default endpoint authHandler
-			endpoint.authHandler ??= options.authHandler ?? null;
+			e.authHandler ??= controller.authHandler ?? null;
 
 			// set endpoint middlewares
-			endpoint.middleware = endpoint.middleware ? [options.middleware, endpoint.middleware].flat().filter(Boolean)! : options.middleware;
+			e.middleware = e.middleware ? controller.middleware.concat(e.middleware).filter(Boolean)! : controller.middleware;
 
 			// set default endpoint responseHandler
-			endpoint.responseHandler ||= options.responseHandler;
+			e.responseHandler ||= controller.responseHandler;
 
-			const controllerPath = options.path;
-			const endpointPath = options.useMethodNames && !endpoint.path ? parseName(endpoint.name) : endpoint.path;
+			const controllerPath = controller.path;
+			const endpointPath = controller.useMethodNames && !e.path ? parseName(e.name) : e.path;
 
-			Object.assign(endpoint, parsePath(`${controllerPath}/${endpointPath}`, endpoint.param));
+			Object.assign(e, parsePath(`${controllerPath}/${endpointPath}`, e.param));
 		}
 
-		Injectable(options)(constructor);
+		setInjects(constructor, controller);
 	};
 }
-
-export interface ControllerOptions extends InjectableOptions {
-	path?: string;
-	param?: ParamSchema;
-	useMethodNames?: boolean;
-	authHandler?: AuthHandler;
-	middleware?: MiddlewareType | MiddlewareType[];
-	responseHandler?: ResponseHandler;
-}
-
-export interface BuiltControllerOptions extends BuiltInjectable {
-	path: string;
-	param: ParamSchema;
-	useMethodNames: boolean;
-	authHandler: AuthHandler | undefined;
-	middleware: MiddlewareType[];
-	responseHandler: ResponseHandler | undefined;
-}
-
-export type MiddlewareType = (req: IncomingMessage, res: ServerResponse) => boolean | PromiseLike<boolean>;
-export type ControllerConstructor = new (...args: any[]) => { [key: string]: any };
-
-type ControllerDecorator = (constructor: ControllerConstructor) => void;
