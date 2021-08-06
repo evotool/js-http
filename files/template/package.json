@@ -1,41 +1,41 @@
 {
-  "name": "@evojs/http",
-  "version": "2.0.0-rc.3",
-  "description": "Nodejs server MVC framework",
-  "license": "MIT",
-  "main": "index.js",
-  "typings": "index.d.ts",
+  "name": "__project_name__",
+  "description": "",
+  "version": "0.1.0",
+  "author": "",
+  "private": true,
   "scripts": {
-    "prebuild": "rm -rf dist/",
-    "build": "tsc --build tsconfig.build.json && node tools/build.js",
-    "prepublishOnly": "npm run build && npm run test && node tools/prepublish.js",
-    "release": "RELEASE_MODE=1 npm run prepublishOnly && npm publish --access public dist/",
+    "prebuild": "npm install && rimraf dist/",
+    "build": "node node_modules/.bin/tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "dev": "nodemon",
     "test": "jest --coverage --detectOpenHandles",
     "lint": "eslint \"src/**/*.ts\" -f codeframe"
   },
   "dependencies": {
     "@evojs/context": "^0.1.0",
-    "content-type": "^1.0.4",
-    "unpipe": "^1.0.0",
-    "uuid": "^8.3.2"
+    "@evojs/http": "2.0.0-rc.2",
+    "@evojs/http-client": "^0.2.0",
+    "@evojs/logger": "^1.4.0",
+    "@evojs/validator": "^0.2.0",
+    "dotenv": "^10.0.0",
+    "mime": "^2.5.2",
+    "reflect-metadata": "^0.1.13",
+    "typeorm": "^0.2.36"
   },
   "devDependencies": {
     "@evojs/eslint-plugin": "^1.5.7",
-    "@evojs/http-client": "^0.2.0",
-    "@evojs/validator": "^0.2.0",
-    "@types/content-type": "^1.1.5",
     "@types/jest": "^26.0.24",
-    "@types/uuid": "^8.3.1",
+    "@types/mime": "^2.0.3",
+    "@types/node": "^16.4.10",
     "eslint": "^7.32.0",
-    "glob": "^7.1.7",
     "jest": "^27.0.6",
-    "reflect-metadata": "^0.1.13",
+    "nodemon": "^2.0.12",
+    "rimraf": "^3.0.2",
     "ts-jest": "^27.0.4",
+    "ts-node": "^10.1.0",
+    "tsconfig-paths": "^3.10.1",
     "typescript": "^4.3.5"
-  },
-  "peerDependencies": {
-    "@evojs/validator": "^0.2.0",
-    "reflect-metadata": ">=0.1.13"
   },
   "jest": {
     "collectCoverage": true,
@@ -45,11 +45,6 @@
     "moduleFileExtensions": [
       "js",
       "ts"
-    ],
-    "modulePathIgnorePatterns": [
-      "files/",
-      "node_modules/",
-      "dist/"
     ],
     "rootDir": "./",
     "testEnvironment": "node",
@@ -63,19 +58,21 @@
           "extends": "./tsconfig.json",
           "include": [
             "**/*.spec.ts"
+          ],
+          "exclude": [
+            "node_modules/",
+            "dist/"
           ]
         }
       }
     }
   },
   "eslintConfig": {
+    "root": true,
     "ignorePatterns": [
-      "files/",
-      "/dist/",
-      "coverage/",
+      "dist/",
       "node_modules/"
     ],
-    "root": true,
     "env": {
       "node": true
     },
@@ -109,26 +106,15 @@
       }
     ]
   },
-  "engines": {
-    "node": ">=11.0.0"
-  },
-  "author": {
-    "name": "Shamil Sultanov",
-    "email": "evo@sultanov.io",
-    "url": "http://evo.sultanov.io"
-  },
-  "keywords": [
-    "nodejs",
-    "mvc",
-    "server",
-    "framework"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/evotool/js-http.git"
-  },
-  "bugs": {
-    "url": "https://github.com/evotool/js-http/issues"
-  },
-  "homepage": "https://github.com/evotool/js-http#readme"
+  "nodemonConfig": {
+    "ignore": [
+      ".git/",
+      ".vscode/",
+      "node_modules/",
+      "dist/",
+      "static/"
+    ],
+    "exec": "ts-node --files src/main.ts",
+    "ext": "js,ts"
+  }
 }

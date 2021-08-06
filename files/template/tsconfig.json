@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "baseUrl": "./",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "lib": ["esnext"],
+    "moduleResolution": "node",
+    "outDir": "dist/",
+    "removeComments": true,
+    "strict": true,
+    "target": "es5"
+  },
+  "exclude": ["files/", "node_modules/", "dist/"]
+}
