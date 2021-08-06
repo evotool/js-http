@@ -7,616 +7,675 @@ import type { Readable } from 'stream';
 import * as unpipe from 'unpipe';
 
 import {
-	BadRequestException,
-	HttpException,
-	INTERNAL_HTTP_EXCEPTIONS,
-	InternalServerErrorException,
-	LengthRequiredException,
-	PayloadTooLargeException,
-	UnsupportedMediaTypeException,
+  BadRequestException,
+  HttpException,
+  INTERNAL_HTTP_EXCEPTIONS,
+  InternalServerErrorException,
+  LengthRequiredException,
+  PayloadTooLargeException,
+  UnsupportedMediaTypeException,
 } from '../classes/HttpException';
-import { ParamSchema } from '../decorators/Endpoint';
+import type { ParamSchema } from '../decorators/Endpoint';
 
-export const BUFFER_ENCODINGS: BufferEncoding[] = ['ascii', 'utf8', 'utf-8', 'utf16le', 'ucs2', 'ucs-2', 'base64', 'latin1', 'binary', 'hex'];
+export const BUFFER_ENCODINGS: BufferEncoding[] = [
+  'ascii',
+  'utf8',
+  'utf-8',
+  'utf16le',
+  'ucs2',
+  'ucs-2',
+  'base64',
+  'latin1',
+  'binary',
+  'hex',
+];
 
 const CONTENT_DISPOSITION_REGEX = /^content-disposition: form-data; *(.*)$/i;
 const CONTENT_TYPE_REGEX = /^content-type: *([-\w.]+\/[-\w.+]+)$/i;
 
 function halt(stream: Readable): void {
-	unpipe(stream);
+  unpipe(stream);
 
-	if (typeof stream.pause === 'function') {
-		stream.pause();
-	}
+  if (typeof stream.pause === 'function') {
+    stream.pause();
+  }
 }
 
 function readBody(req: IncomingMessage, encoding: BufferEncoding, contentLengthLimit?: number): Promise<string>;
 function readBody(req: IncomingMessage, encoding: undefined, contentLengthLimit?: number): Promise<Buffer>;
 function readBody(req: IncomingMessage, encoding?: BufferEncoding | undefined, contentLengthLimit?: number): Promise<Buffer | string> {
-	return new Promise<Buffer | string>((resolve, reject) => {
-		if (!('content-length' in req.headers)) {
-			reject(new LengthRequiredException(INTERNAL_HTTP_EXCEPTIONS.CONTENT_LENGTH_REQUIRED));
-		}
+  return new Promise<Buffer | string>((resolve, reject) => {
+    if (!('content-length' in req.headers)) {
+      reject(new LengthRequiredException(INTERNAL_HTTP_EXCEPTIONS.CONTENT_LENGTH_REQUIRED));
+    }
 
-		const length = +req.headers['content-length']!;
+    const length = +req.headers['content-length']!;
 
-		let complete = false;
+    let complete = false;
 
-		if (typeof encoding === 'string' && !BUFFER_ENCODINGS.includes(encoding)) {
-			return reject(new UnsupportedMediaTypeException(INTERNAL_HTTP_EXCEPTIONS.UNSUPPORTED_ENCODING, { encoding }));
-		}
+    if (typeof encoding === 'string' && !BUFFER_ENCODINGS.includes(encoding)) {
+      reject(new UnsupportedMediaTypeException(INTERNAL_HTTP_EXCEPTIONS.UNSUPPORTED_ENCODING, { encoding }));
 
-		// check the length and limit options.
-		// note: we intentionally leave the stream paused,
-		// so users should handle the stream themselves.
-		if (length! > contentLengthLimit!) {
-			halt(req);
+      return;
+    }
 
-			return reject(new PayloadTooLargeException(INTERNAL_HTTP_EXCEPTIONS.PAYLOAD_TOO_LARGE, { expected: length, contentLengthLimit }));
-		}
+    // check the length and limit options.
+    // note: we intentionally leave the stream paused,
+    // so users should handle the stream themselves.
+    if (length > contentLengthLimit!) {
+      halt(req);
 
-		// streams1: assert request encoding is buffer.
-		// streams2+: assert the stream encoding is buffer.
-		//   stream._decoder: streams1
-		//   state.encoding: streams2
-		//   state.decoder: streams2, specifically < 0.10.6
-		type IncomingMessageExtended = IncomingMessage & { _readableState: { encoding?: string; decoder?: any }; _decoder?: any };
+      reject(new PayloadTooLargeException(INTERNAL_HTTP_EXCEPTIONS.PAYLOAD_TOO_LARGE, { expected: length, contentLengthLimit }));
 
-		const state = (req as IncomingMessageExtended)._readableState;
+      return;
+    }
 
-		if ((req as IncomingMessageExtended)._decoder || (state && (state.encoding || state.decoder))) {
-			halt(req);
+    // streams1: assert request encoding is buffer.
+    // streams2+: assert the stream encoding is buffer.
+    //   stream._decoder: streams1
+    //   state.encoding: streams2
+    //   state.decoder: streams2, specifically < 0.10.6
+    type IncomingMessageExtended = IncomingMessage & { _readableState: { encoding?: string; decoder?: any }; _decoder?: any };
 
-			return reject(new InternalServerErrorException(INTERNAL_HTTP_EXCEPTIONS.STREAM_ENCODING_ENABLED, {}));
-		}
+    const state = (req as IncomingMessageExtended)._readableState;
 
-		let received = 0;
+    if ((req as IncomingMessageExtended)._decoder || (state && (state.encoding || state.decoder))) {
+      halt(req);
 
-		const data: Buffer[] = [];
+      reject(new InternalServerErrorException(INTERNAL_HTTP_EXCEPTIONS.STREAM_ENCODING_ENABLED, {}));
 
-		function cleanup(throwed?: boolean): void {
-			if (complete) {
-				return;
-			}
+      return;
+    }
 
-			complete = true;
+    let received = 0;
 
-			if (throwed) {
-				halt(req);
-			}
+    const data: Buffer[] = [];
 
-			req
-				.removeListener('error', onEnd)
-				.removeListener('aborted', onAborted)
-				.removeListener('data', onData)
-				.removeListener('end', onEnd)
-				.removeListener('close', cleanup);
-		}
+    function cleanup(throwed?: boolean): void {
+      if (complete) {
+        return;
+      }
 
-		function onAborted(): void {
-			if (complete) {
-				return;
-			}
+      complete = true;
 
-			cleanup(true);
+      if (throwed) {
+        halt(req);
+      }
 
-			return reject(new BadRequestException(INTERNAL_HTTP_EXCEPTIONS.REQUEST_ABORTED, { code: 'ECONNABORTED', expected: length, received }));
-		}
+      req
+        .removeListener('error', onEnd)
+        .removeListener('aborted', onAborted)
+        .removeListener('data', onData)
+        .removeListener('end', onEnd)
+        .removeListener('close', cleanup);
+    }
 
-		function onData(chunk: Buffer): void {
-			if (complete) {
-				return;
-			}
+    function onAborted(): void {
+      if (complete) {
+        return;
+      }
 
-			received += chunk.byteLength;
+      cleanup(true);
 
-			if (received > contentLengthLimit!) {
-				cleanup(true);
+      reject(new BadRequestException(INTERNAL_HTTP_EXCEPTIONS.REQUEST_ABORTED, { code: 'ECONNABORTED', expected: length, received }));
+    }
 
-				return reject(new PayloadTooLargeException(INTERNAL_HTTP_EXCEPTIONS.PAYLOAD_TOO_LARGE, { contentLengthLimit, received }));
-			}
+    function onData(chunk: Buffer): void {
+      if (complete) {
+        return;
+      }
 
-			data.push(chunk);
-		}
+      received += chunk.byteLength;
 
-		function onEnd(err: Error): void {
-			if (complete) {
-				return;
-			}
+      if (received > contentLengthLimit!) {
+        cleanup(true);
 
-			if (err || received !== length!) {
-				cleanup(true);
+        reject(new PayloadTooLargeException(INTERNAL_HTTP_EXCEPTIONS.PAYLOAD_TOO_LARGE, { contentLengthLimit, received }));
 
-				return reject(err || new BadRequestException(INTERNAL_HTTP_EXCEPTIONS.BAD_CONTENT_LENGTH, { expected: length, received }));
-			}
+        return;
+      }
 
-			cleanup();
+      data.push(chunk);
+    }
 
-			const buffer = Buffer.concat(data);
+    function onEnd(err: Error): void {
+      if (complete) {
+        return;
+      }
 
-			return resolve(typeof encoding === 'string' ? buffer.toString(encoding) : buffer);
-		}
+      if (err || received !== length) {
+        cleanup(true);
 
-		req
-			.on('error', onEnd)
-			.on('aborted', onAborted)
-			.on('data', onData)
-			.on('end', onEnd)
-			.on('close', cleanup);
-	});
+        reject(err || new BadRequestException(INTERNAL_HTTP_EXCEPTIONS.BAD_CONTENT_LENGTH, { expected: length, received }));
+
+        return;
+      }
+
+      cleanup();
+
+      const buffer = Buffer.concat(data);
+
+      resolve(typeof encoding === 'string' ? buffer.toString(encoding) : buffer);
+    }
+
+    req.on('error', onEnd).on('aborted', onAborted).on('data', onData).on('end', onEnd).on('close', cleanup);
+  });
 }
 
 // parse multipart
 
-export function parseMultipart(req: IncomingMessage, boundary: string, encoding: BufferEncoding = 'utf-8', options: MultipartOptions = {}): Promise<MultipartData> {
-	return new Promise((resolve, reject) => {
-		if (!('content-length' in req.headers)) {
-			reject(new LengthRequiredException(INTERNAL_HTTP_EXCEPTIONS.CONTENT_LENGTH_REQUIRED));
-		}
-
-		const {
-			filename = (file: MultipartFile): string => {
-				if (file.filename) {
-					return file.filename;
-				}
-
-				let out = '';
-
-				while (out.length < 64) {
-					out += Math.random().toString(16).substring(2);
-				}
-
-				return out.substring(0, length);
-			},
-			uploadsDirectory = path.resolve(options.uploadsDirectory || '.'),
-			contentLengthLimit,
-			maxFileSize,
-			maxFieldSize,
-		} = options;
-
-		const length = +req.headers['content-length']!;
-		const BOUNDARY = Buffer.from(`--${boundary}`, encoding);
-		const CRLF = Buffer.from('\r\n', encoding);
-		const THEEND = Buffer.from('--', encoding);
-		const output: MultipartData = {};
-		const mkdirOptions = { recursive: true };
-
-		let complete = false;
-		let received = 0;
-		let state = 0,
-			contentDispositionData: { [key: string]: string } = {},
-			filetype = '',
-			prevChunk: Buffer | undefined,
-			startIndex = 0,
-			prevStartIndex = 0;
-		const writeFilePromises: Promise<string>[] = [];
-
-		if (typeof encoding === 'string' && !BUFFER_ENCODINGS.includes(encoding as BufferEncoding)) {
-			return reject(new UnsupportedMediaTypeException(INTERNAL_HTTP_EXCEPTIONS.UNSUPPORTED_ENCODING, { encoding }));
-		}
-
-		// check the length and limit options.
-		// note: we intentionally leave the stream paused,
-		// so users should handle the stream themselves.
-		if (length! > contentLengthLimit!) {
-			halt(req);
-
-			return reject(new PayloadTooLargeException(INTERNAL_HTTP_EXCEPTIONS.PAYLOAD_TOO_LARGE, { expected: length, contentLengthLimit }));
-		}
-
-		function cleanup(throwed?: boolean): void {
-			if (complete) {
-				return;
-			}
-
-			complete = true;
-
-			if (throwed) {
-				void Promise.all(writeFilePromises.map(async (promise) => {
-					try {
-						const fp = await promise;
-						fs.unlinkSync(fp);
-					} catch (err) {
-						console.debug(err);
-					}
-				}));
-
-				halt(req);
-			}
-
-			req
-				.removeListener('aborted', onAborted)
-				.removeListener('data', onData)
-				.removeListener('end', onEnd)
-				.removeListener('error', onEnd)
-				.removeListener('close', cleanup);
-		}
-
-		function onAborted(): void {
-			if (complete) {
-				return;
-			}
-
-			cleanup(true);
-
-			return reject(new BadRequestException(INTERNAL_HTTP_EXCEPTIONS.REQUEST_ABORTED, { code: 'ECONNABORTED', expected: length, received }));
-		}
-
-		function onData(chunk: Buffer): void {
-			if (complete) {
-				return;
-			}
-
-			received += chunk.byteLength;
-
-			if (received > contentLengthLimit!) {
-				cleanup(true);
+export function parseMultipart(
+  req: IncomingMessage,
+  boundary: string,
+  encoding: BufferEncoding = 'utf-8',
+  options: MultipartOptions = {},
+): Promise<MultipartData> {
+  return new Promise((resolve, reject) => {
+    if (!('content-length' in req.headers)) {
+      reject(new LengthRequiredException(INTERNAL_HTTP_EXCEPTIONS.CONTENT_LENGTH_REQUIRED));
+    }
+
+    const {
+      filename = (file: MultipartFile): string => {
+        if (file.filename) {
+          return file.filename;
+        }
+
+        let out = '';
+
+        while (out.length < 64) {
+          out += Math.random().toString(16).substring(2);
+        }
+
+        return out.substring(0, length);
+      },
+      uploadsDirectory = path.resolve(options.uploadsDirectory || '.'),
+      contentLengthLimit,
+      maxFileSize,
+      maxFieldSize,
+    } = options;
+
+    const length = +req.headers['content-length']!;
+    const BOUNDARY = Buffer.from(`--${boundary}`, encoding);
+    const CRLF = Buffer.from('\r\n', encoding);
+    const THEEND = Buffer.from('--', encoding);
+    const output: MultipartData = {};
+    const mkdirOptions = { recursive: true };
+
+    let complete = false;
+    let received = 0;
+    let state = 0,
+      contentDispositionData: Record<string, string> = {},
+      filetype = '',
+      prevChunk: Buffer | undefined,
+      startIndex = 0,
+      prevStartIndex = 0;
+    const writeFilePromises: Promise<string>[] = [];
+
+    if (typeof encoding === 'string' && !BUFFER_ENCODINGS.includes(encoding)) {
+      reject(new UnsupportedMediaTypeException(INTERNAL_HTTP_EXCEPTIONS.UNSUPPORTED_ENCODING, { encoding }));
+
+      return;
+    }
+
+    // check the length and limit options.
+    // note: we intentionally leave the stream paused,
+    // so users should handle the stream themselves.
+    if (length > contentLengthLimit!) {
+      halt(req);
+
+      reject(new PayloadTooLargeException(INTERNAL_HTTP_EXCEPTIONS.PAYLOAD_TOO_LARGE, { expected: length, contentLengthLimit }));
+
+      return;
+    }
+
+    function cleanup(throwed?: boolean): void {
+      if (complete) {
+        return;
+      }
+
+      complete = true;
+
+      if (throwed) {
+        void Promise.all(
+          writeFilePromises.map(async (promise) => {
+            try {
+              const fp = await promise;
+              fs.unlinkSync(fp);
+            } catch (err) {
+              console.debug(err);
+            }
+          }),
+        );
+
+        halt(req);
+      }
+
+      req
+        .removeListener('aborted', onAborted)
+        .removeListener('data', onData)
+        .removeListener('end', onEnd)
+        .removeListener('error', onEnd)
+        .removeListener('close', cleanup);
+    }
+
+    function onAborted(): void {
+      if (complete) {
+        return;
+      }
+
+      cleanup(true);
 
-				return reject(new PayloadTooLargeException(INTERNAL_HTTP_EXCEPTIONS.PAYLOAD_TOO_LARGE, { contentLengthLimit, received }));
-			}
+      reject(new BadRequestException(INTERNAL_HTTP_EXCEPTIONS.REQUEST_ABORTED, { code: 'ECONNABORTED', expected: length, received }));
+    }
 
-			if (prevChunk) {
-				chunk = Buffer.concat([prevChunk, chunk]);
-				prevChunk = undefined;
-			} else {
-				startIndex = 0;
-				prevStartIndex = 0;
-			}
+    function onData(chunk: Buffer): void {
+      if (complete) {
+        return;
+      }
 
-			const chunkByteLength = chunk.byteLength;
+      received += chunk.byteLength;
 
-			while (startIndex < chunkByteLength) {
-				if (0 === state) { // start boundary
-					const endIndex = chunk.indexOf(BOUNDARY, prevStartIndex || startIndex);
+      if (received > contentLengthLimit!) {
+        cleanup(true);
 
-					if (endIndex < 0) {
-						prevStartIndex = chunkByteLength - BOUNDARY.length;
-						prevChunk = chunk;
+        reject(new PayloadTooLargeException(INTERNAL_HTTP_EXCEPTIONS.PAYLOAD_TOO_LARGE, { contentLengthLimit, received }));
 
-						return;
-					}
+        return;
+      }
 
-					prevStartIndex = 0;
+      if (prevChunk) {
+        chunk = Buffer.concat([prevChunk, chunk]);
+        prevChunk = undefined;
+      } else {
+        startIndex = 0;
+        prevStartIndex = 0;
+      }
 
-					startIndex = endIndex + BOUNDARY.length;
+      const chunkByteLength = chunk.byteLength;
 
-					if (chunk[startIndex] === THEEND[0] && chunk[startIndex + 1] === THEEND[1]) {
-						return;
-					}
+      while (startIndex < chunkByteLength) {
+        if (state === 0) {
+          // start boundary
+          const endIndex = chunk.indexOf(BOUNDARY, prevStartIndex || startIndex);
 
-					startIndex += CRLF.length;
-					state = 1;
+          if (endIndex < 0) {
+            prevStartIndex = chunkByteLength - BOUNDARY.length;
+            prevChunk = chunk;
 
-					continue;
-				}
+            return;
+          }
 
-				if (1 === state) { // Content-Disposition
-					const endIndex = chunk.indexOf(CRLF, prevStartIndex || startIndex);
+          prevStartIndex = 0;
 
-					if (endIndex < 0) {
-						prevStartIndex = chunkByteLength - CRLF.length;
-						prevChunk = chunk;
+          startIndex = endIndex + BOUNDARY.length;
 
-						return;
-					}
+          if (chunk[startIndex] === THEEND[0] && chunk[startIndex + 1] === THEEND[1]) {
+            return;
+          }
 
-					prevStartIndex = 0;
+          startIndex += CRLF.length;
+          state = 1;
 
-					const contentDispositionLine = chunk.slice(startIndex, endIndex).toString(encoding);
-					const m = CONTENT_DISPOSITION_REGEX.exec(contentDispositionLine);
+          continue;
+        }
 
-					if (!m) {
-						throw new Error();
-					}
+        if (state === 1) {
+          // Content-Disposition
+          const endIndex = chunk.indexOf(CRLF, prevStartIndex || startIndex);
 
-					contentDispositionData = {};
+          if (endIndex < 0) {
+            prevStartIndex = chunkByteLength - CRLF.length;
+            prevChunk = chunk;
 
-					for (const pair of m[1].split(/; */)) {
-						const [key, value] = pair.split('=');
-						contentDispositionData[key] = value.replace(/^"|"$/g, '');
-					}
+            return;
+          }
 
-					startIndex = endIndex + CRLF.length;
-					state = 2;
+          prevStartIndex = 0;
 
-					continue;
-				}
+          const contentDispositionLine = chunk.slice(startIndex, endIndex).toString(encoding);
+          const m = CONTENT_DISPOSITION_REGEX.exec(contentDispositionLine);
 
-				if (2 === state) { // Content-Type
-					const endIndex = chunk.indexOf(CRLF, prevStartIndex || startIndex);
+          if (!m) {
+            throw new Error();
+          }
 
-					if (endIndex < 0) {
-						prevStartIndex = chunkByteLength - CRLF.length;
-						prevChunk = chunk;
+          contentDispositionData = {};
 
-						return;
-					}
+          for (const pair of m[1].split(/; */)) {
+            const [key, value] = pair.split('=');
+            contentDispositionData[key] = value.replace(/^"|"$/g, '');
+          }
 
-					prevStartIndex = 0;
+          startIndex = endIndex + CRLF.length;
+          state = 2;
 
-					if (startIndex === endIndex) {
-						filetype = '';
-					} else {
-						const contentTypeLine = chunk.slice(startIndex, endIndex).toString(encoding);
+          continue;
+        }
 
-						const m = CONTENT_TYPE_REGEX.exec(contentTypeLine);
+        if (state === 2) {
+          // Content-Type
+          const endIndex = chunk.indexOf(CRLF, prevStartIndex || startIndex);
 
-						if (!m) {
-							throw new Error();
-						}
+          if (endIndex < 0) {
+            prevStartIndex = chunkByteLength - CRLF.length;
+            prevChunk = chunk;
 
-						filetype = m[1];
-						startIndex = endIndex + CRLF.length; // 2x crlf
-					}
+            return;
+          }
 
-					startIndex += CRLF.length;
-					state = 3;
+          prevStartIndex = 0;
 
-					continue;
-				}
+          if (startIndex === endIndex) {
+            filetype = '';
+          } else {
+            const contentTypeLine = chunk.slice(startIndex, endIndex).toString(encoding);
 
-				if (3 === state) { // Body
-					let endIndex = chunk.indexOf(BOUNDARY, prevStartIndex || startIndex);
+            const m = CONTENT_TYPE_REGEX.exec(contentTypeLine);
 
-					if (endIndex < 0) {
-						prevStartIndex = chunkByteLength - BOUNDARY.length;
-						prevChunk = chunk;
+            if (!m) {
+              throw new Error();
+            }
 
-						return;
-					}
+            filetype = m[1];
+            startIndex = endIndex + CRLF.length; // 2x crlf
+          }
 
-					endIndex -= CRLF.length;
+          startIndex += CRLF.length;
+          state = 3;
 
-					const part = contentDispositionData as unknown as MultipartFile;
-					const b = chunk.slice(startIndex, endIndex);
-					part.charset = BUFFER_ENCODINGS.includes(part.charset as BufferEncoding) ? part.charset as BufferEncoding : encoding;
+          continue;
+        }
 
-					let data: File | string;
-					let name: keyof typeof output;
+        if (state === 3) {
+          // Body
+          let endIndex = chunk.indexOf(BOUNDARY, prevStartIndex || startIndex);
 
-					if (filetype) {
-						if (b.byteLength > maxFileSize!) {
-							throw new PayloadTooLargeException(INTERNAL_HTTP_EXCEPTIONS.PAYLOAD_TOO_LARGE, { maxFileSize, byteLength: b.byteLength });
-						}
+          if (endIndex < 0) {
+            prevStartIndex = chunkByteLength - BOUNDARY.length;
+            prevChunk = chunk;
 
-						part.filetype = filetype;
-						part.filesize = b.byteLength;
+            return;
+          }
 
-						const f = path.resolve(uploadsDirectory!, filename!(part));
-						const d = path.dirname(f);
-						const o = { encoding: part.charset };
+          endIndex -= CRLF.length;
 
-						writeFilePromises.push(new Promise<string>((r, t) => fs.mkdir(d, mkdirOptions, (e) => e ? t(e) : fs.writeFile(f, b, o, (e) => e ? t(e) : r(f)))));
-						name = part.name;
+          const part = contentDispositionData as unknown as MultipartFile;
+          const b = chunk.slice(startIndex, endIndex);
+          part.charset = BUFFER_ENCODINGS.includes(part.charset) ? part.charset : encoding;
 
-						data = {
-							path: f,
-							name: part.filename,
-							size: part.filesize,
-							type: part.filetype,
-							encoding: part.charset,
-						};
-					} else {
-						if (b.byteLength > maxFieldSize!) {
-							throw new PayloadTooLargeException(INTERNAL_HTTP_EXCEPTIONS.PAYLOAD_TOO_LARGE, { maxFieldSize, byteLength: b.byteLength });
-						}
+          let data: File | string;
+          let name: keyof typeof output;
 
-						name = part.name;
-						data = b.toString(part.charset);
-					}
+          if (filetype) {
+            if (b.byteLength > maxFileSize!) {
+              throw new PayloadTooLargeException(INTERNAL_HTTP_EXCEPTIONS.PAYLOAD_TOO_LARGE, { maxFileSize, byteLength: b.byteLength });
+            }
 
-					if (name in output) {
-						if (Array.isArray(output[name])) {
-							(output[name] as (string | File)[]).push(data);
-						} else {
-							output[name] = [output[name] as string | File, data];
-						}
-					} else {
-						output[name] = data;
-					}
+            part.filetype = filetype;
+            part.filesize = b.byteLength;
 
-					contentDispositionData = {};
-					filetype = '';
-					startIndex = endIndex + CRLF.length;
-					state = 0;
+            const f = path.resolve(uploadsDirectory, filename(part));
+            const d = path.dirname(f);
+            const o = { encoding: part.charset };
 
-					continue;
-				}
-			}
-		}
+            writeFilePromises.push(
+              new Promise<string>((r, t) => fs.mkdir(d, mkdirOptions, (e) => e ? t(e) : fs.writeFile(f, b, o, (e) => e ? t(e) : r(f)))),
+            );
 
-		function onEnd(err: Error): void {
-			if (complete) {
-				return;
-			}
+            name = part.name;
 
-			if (err || received !== length!) {
-				cleanup(true);
+            data = {
+              path: f,
+              name: part.filename,
+              size: part.filesize,
+              type: part.filetype,
+              encoding: part.charset,
+            };
+          } else {
+            if (b.byteLength > maxFieldSize!) {
+              throw new PayloadTooLargeException(INTERNAL_HTTP_EXCEPTIONS.PAYLOAD_TOO_LARGE, { maxFieldSize, byteLength: b.byteLength });
+            }
 
-				return reject(err || new BadRequestException(INTERNAL_HTTP_EXCEPTIONS.BAD_CONTENT_LENGTH, { expected: length, received }));
-			}
+            name = part.name;
+            data = b.toString(part.charset);
+          }
 
-			cleanup();
+          if (name in output) {
+            if (Array.isArray(output[name])) {
+              (output[name] as (string | File)[]).push(data);
+            } else {
+              output[name] = [output[name] as string | File, data];
+            }
+          } else {
+            output[name] = data;
+          }
 
-			void Promise.all(writeFilePromises.map(async (promise) => {
-				try {
-					await promise;
-				} catch (err) {
-					console.debug(err);
-				}
-			})).then(() => resolve(output));
-		}
+          contentDispositionData = {};
+          filetype = '';
+          startIndex = endIndex + CRLF.length;
+          state = 0;
 
-		req
-			.on('error', onEnd)
-			.on('aborted', onAborted)
-			.on('data', onData)
-			.on('end', onEnd)
-			.on('close', cleanup);
-	});
+          continue;
+        }
+      }
+    }
+
+    function onEnd(err: Error): void {
+      if (complete) {
+        return;
+      }
+
+      if (err || received !== length) {
+        cleanup(true);
+
+        reject(err || new BadRequestException(INTERNAL_HTTP_EXCEPTIONS.BAD_CONTENT_LENGTH, { expected: length, received }));
+
+        return;
+      }
+
+      cleanup();
+
+      void Promise.all(
+        writeFilePromises.map(async (promise) => {
+          try {
+            await promise;
+          } catch (err) {
+            console.debug(err);
+          }
+        }),
+      ).then(() => {
+        resolve(output);
+      });
+    }
+
+    req.on('error', onEnd).on('aborted', onAborted).on('data', onData).on('end', onEnd).on('close', cleanup);
+  });
 }
 
 // parse body
 
-const BodyTypes: { [key: string]: BodyType } = {
-	'application/json': 'json',
-	'application/x-www-form-urlencoded': 'urlencoded',
-	'multipart/form-data': 'multipart',
+const BodyTypes: Record<string, BodyType> = {
+  'application/json': 'json',
+  'application/x-www-form-urlencoded': 'urlencoded',
+  'multipart/form-data': 'multipart',
 };
 
 export async function parseBody(req: IncomingMessage, bodyType: 'none', parsers: Parsers, options: BodyOptions): Promise<undefined>;
 export async function parseBody(req: IncomingMessage, bodyType: 'json', parsers: Parsers, options: BodyOptions): Promise<JsonData>;
-export async function parseBody(req: IncomingMessage, bodyType: 'urlencoded', parsers: Parsers, options: BodyOptions): Promise<UrlencodedData>;
-export async function parseBody(req: IncomingMessage, bodyType: 'multipart', parsers: Parsers, options: MultipartOptions): Promise<MultipartData>;
+export async function parseBody(
+  req: IncomingMessage,
+  bodyType: 'urlencoded',
+  parsers: Parsers,
+  options: BodyOptions,
+): Promise<UrlencodedData>;
+export async function parseBody(
+  req: IncomingMessage,
+  bodyType: 'multipart',
+  parsers: Parsers,
+  options: MultipartOptions,
+): Promise<MultipartData>;
 export async function parseBody(req: IncomingMessage, bodyType: 'text', parsers: Parsers, options: BodyOptions): Promise<string>;
 export async function parseBody(req: IncomingMessage, bodyType: 'raw', parsers: Parsers, options: BodyOptions): Promise<Buffer>;
-export async function parseBody(req: IncomingMessage, bodyType: BodyType, parsers: Parsers, options: BodyOptions): Promise<undefined | string | Buffer | JsonData | UrlencodedData | MultipartData | Readable>;
-export async function parseBody(req: IncomingMessage, bodyType: BodyType, parsers: Parsers, options: BodyOptions): Promise<undefined | string | Buffer | JsonData | UrlencodedData | MultipartData | Readable> {
-	if (bodyType === 'none') {
-		return void 0;
-	}
+export async function parseBody(
+  req: IncomingMessage,
+  bodyType: BodyType,
+  parsers: Parsers,
+  options: BodyOptions,
+): Promise<undefined | string | Buffer | JsonData | UrlencodedData | MultipartData | Readable>;
+export async function parseBody(
+  req: IncomingMessage,
+  bodyType: BodyType,
+  parsers: Parsers,
+  options: BodyOptions,
+): Promise<undefined | string | Buffer | JsonData | UrlencodedData | MultipartData | Readable> {
+  if (bodyType === 'none') {
+    return;
+  }
 
-	try {
-		const { type, parameters } = contentType.parse(req);
-		const contentLengthLimit = options.contentLengthLimit;
-		const encoding = (parameters.charset || 'utf-8').toLowerCase() as BufferEncoding;
+  try {
+    const { type, parameters } = contentType.parse(req);
+    const { contentLengthLimit } = options;
+    const encoding = (parameters.charset || 'utf-8').toLowerCase() as BufferEncoding;
 
-		if (BodyTypes[type] !== bodyType && (bodyType === 'json' || bodyType === 'urlencoded' || bodyType === 'multipart' || bodyType === 'text')) {
-			throw new UnsupportedMediaTypeException(INTERNAL_HTTP_EXCEPTIONS.BAD_CONTENT_TYPE);
-		}
+    if (
+      BodyTypes[type] !== bodyType
+      && (bodyType === 'json' || bodyType === 'urlencoded' || bodyType === 'multipart' || bodyType === 'text')
+    ) {
+      throw new UnsupportedMediaTypeException(INTERNAL_HTTP_EXCEPTIONS.BAD_CONTENT_TYPE);
+    }
 
-		let raw: Buffer | string;
+    let raw: Buffer | string;
 
-		if (bodyType === 'json' || bodyType === 'urlencoded' || bodyType === 'text') {
-			raw = await readBody(req, encoding, contentLengthLimit);
-		} else if (bodyType === 'raw') {
-			raw = await readBody(req, void 0, contentLengthLimit);
-		} else {
-			return await parseMultipart(req, parameters.boundary, encoding, options as MultipartOptions);
-		}
+    if (bodyType === 'json' || bodyType === 'urlencoded' || bodyType === 'text') {
+      raw = await readBody(req, encoding, contentLengthLimit);
+    } else if (bodyType === 'raw') {
+      raw = await readBody(req, undefined, contentLengthLimit);
+    } else {
+      return await parseMultipart(req, parameters.boundary, encoding, options as MultipartOptions);
+    }
 
-		if (bodyType === 'json') {
-			return parsers.json.parse(raw as string) as JsonData;
-		}
+    if (bodyType === 'json') {
+      return parsers.json.parse(raw as string) as JsonData;
+    }
 
-		if (bodyType === 'urlencoded') {
-			return parsers.urlencoded.parse(raw as string) as UrlencodedData;
-		}
+    if (bodyType === 'urlencoded') {
+      return parsers.urlencoded.parse(raw as string) as UrlencodedData;
+    }
 
-		return raw;
-	} catch (err) {
-		if (!(err instanceof HttpException)) {
-			throw new InternalServerErrorException(INTERNAL_HTTP_EXCEPTIONS.INTERNAL_SERVER_ERROR, { message: err.message, stack: err.stack });
-		}
+    return raw;
+  } catch (err) {
+    if (!(err instanceof HttpException)) {
+      throw new InternalServerErrorException(INTERNAL_HTTP_EXCEPTIONS.INTERNAL_SERVER_ERROR, { message: err.message, stack: err.stack });
+    }
 
-		throw err;
-	}
+    throw err;
+  }
 }
 
 // parse path
 
 const PATH_REGEX = /^:([a-z_$][a-z0-9_$]*)(\(.*\))?$/i;
-const parsePathItem = (p: RegExp): string => `(${p.source.replace(/^\^|\$$/g, '').replace(/\$\|/g, '|').replace(/\|\^/g, '|')})`;
+const parsePathItem = (p: RegExp): string => `(${p.source
+  .replace(/^\^|\$$/g, '')
+  .replace(/\$\|/g, '|')
+  .replace(/\|\^/g, '|')})`;
 
 export function parsePath(path: string, params: ParamSchema): { path: string; pathRegex: RegExp; paramOrder: string[] } {
-	const pathParts = path.split('/').filter(Boolean);
+  const pathParts = path.split('/').filter(Boolean);
 
-	const paramOrder: string[] = [];
+  const paramOrder: string[] = [];
 
-	let parsedPath = '';
-	let parsedPathRegex = '';
+  let parsedPath = '';
+  let parsedPathRegex = '';
 
-	for (const p of pathParts) {
-		if (p.startsWith(':')) {
-			const [param, regex] = Array.from(PATH_REGEX.exec(p) || []).slice(1) as [string, string?];
+  for (const p of pathParts) {
+    if (p.startsWith(':')) {
+      const [param, regex] = Array.from(PATH_REGEX.exec(p) || []).slice(1) as [string, string?];
 
-			if (!param) {
-				throw new Error(`Bad path "/${path}"`);
-			}
+      if (!param) {
+        throw new Error(`Bad path "/${path}"`);
+      }
 
-			paramOrder.push(param);
+      paramOrder.push(param);
 
-			const pattern = regex ? new RegExp(`^${regex}$`) : params[param] || new RegExp('^[^/]+$');
-			const spattern = parsePathItem(pattern);
+      const pattern = regex ? new RegExp(`^${regex}$`) : params[param] || /^[^/]+$/;
+      const spattern = parsePathItem(pattern);
 
-			parsedPathRegex += `/${spattern}`;
-			parsedPath += `/:${param}`;
+      parsedPathRegex += `/${spattern}`;
+      parsedPath += `/:${param}`;
 
-			if (regex || params[param]) {
-				parsedPath += spattern;
-			}
+      if (regex || params[param]) {
+        parsedPath += spattern;
+      }
 
-			params[param] ??= pattern;
-		} else {
-			const part = `/${p.toLowerCase()}`;
-			parsedPath += part;
-			parsedPathRegex += part;
-		}
-	}
+      params[param] ??= pattern;
+    } else {
+      const part = `/${p.toLowerCase()}`;
+      parsedPath += part;
+      parsedPathRegex += part;
+    }
+  }
 
-	return { path: parsedPath, pathRegex: new RegExp(`^${parsedPathRegex}/?$`, 'i'), paramOrder };
+  return { path: parsedPath, pathRegex: new RegExp(`^${parsedPathRegex}/?$`, 'i'), paramOrder };
 }
 
 // change case
 
 export function snakeCase(value: string): string {
-	return value.replace(/(?:[^\w\d]+)?([A-Z]+)/g, (_: string, p: string) => `_${p.toLowerCase()}`).replace(/^_/, '');
+  return value.replace(/(?:[^\w\d]+)?([A-Z]+)/g, (_: string, p: string) => `_${p.toLowerCase()}`).replace(/^_/, '');
 }
 
 export function parseName(name: string, postfix?: string): string {
-	return snakeCase(typeof postfix === 'string' ? name.replace(new RegExp(`${postfix}$`), '') : name);
+  return snakeCase(typeof postfix === 'string' ? name.replace(new RegExp(`${postfix}$`), '') : name);
 }
 
 export interface Parsers {
-	json: {
-		parse(text: string): any;
-		stringify(value: any): string;
-	};
-	urlencoded: {
-		queryMode?: boolean;
-		parse(text: string): any;
-		stringify(value: any): string;
-	};
+  json: {
+    parse(text: string): any;
+    stringify(value: any): string;
+  };
+  urlencoded: {
+    queryMode?: boolean;
+    parse(text: string): any;
+    stringify(value: any): string;
+  };
 }
 
 export type BodyType = 'none' | 'urlencoded' | 'json' | 'multipart' | 'text' | 'raw';
 
 export type ApplicationBodyOptions = {
-	multipart?: MultipartOptions;
+  multipart?: MultipartOptions;
 } & Partial<Record<Exclude<BodyType, 'multipart'>, { contentLengthLimit?: number }>>;
 
 export type BodyOptions = NonNullable<ApplicationBodyOptions[BodyType]>;
 
 export interface MultipartOptions {
-	contentLengthLimit?: number;
-	maxFileSize?: number;
-	maxFieldSize?: number;
-	uploadsDirectory?: string;
-	filename?(part: MultipartFile): string;
+  contentLengthLimit?: number;
+  maxFileSize?: number;
+  maxFieldSize?: number;
+  uploadsDirectory?: string;
+  filename?: (part: MultipartFile) => string;
 }
 
 export type JsonData = string | number | boolean | null | object | JsonData[];
 
-export interface UrlencodedData {
-	[key: string]: string | string[];
-}
+export type UrlencodedData = Record<string, string | string[]>;
 
 export interface File {
-	name: string;
-	path: string;
-	size: number;
-	type: string;
-	encoding: BufferEncoding;
+  name: string;
+  path: string;
+  size: number;
+  type: string;
+  encoding: BufferEncoding;
 }
 
-export interface MultipartData {
-	[key: string]: string | File | (string | File)[];
-}
+export type MultipartData = Record<string, string | File | (string | File)[]>;
 
 interface MultipartFile {
-	filename: string;
-	filesize: number;
-	filetype: string;
-	charset: BufferEncoding;
-	name: string;
+  filename: string;
+  filesize: number;
+  filetype: string;
+  charset: BufferEncoding;
+  name: string;
 }

@@ -1,27 +1,28 @@
 import { isDeepStrictEqual } from 'util';
 
-import { Application, ApplicationOptions } from '../src';
+import type { ApplicationOptions } from '../src';
+import { Application } from '../src';
 
 export function createApplication(options?: ApplicationOptions): Promise<Application> {
-	return Application.create(options);
+  return Application.create(options);
 }
 
 export async function startApplication(app: Application, port: number, host: string = 'localhost'): Promise<Application> {
-	expect(app.address).toBeNull();
+  expect(app.address).toBeNull();
 
-	app = await app.listen(port);
+  app = await app.listen(port);
 
-	expect(isDeepStrictEqual(app.address, { host, port })).toBe(true);
+  expect(isDeepStrictEqual(app.address, { host, port })).toBe(true);
 
-	return app;
+  return app;
 }
 
 export async function stopApplication(app: Application): Promise<Application> {
-	expect(app.address).toBeTruthy();
+  expect(app.address).toBeTruthy();
 
-	app = await app.close();
+  app = await app.close();
 
-	expect(app.address).toBeNull();
+  expect(app.address).toBeNull();
 
-	return app;
+  return app;
 }
